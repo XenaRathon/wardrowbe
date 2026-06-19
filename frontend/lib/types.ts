@@ -172,6 +172,22 @@ export const CLOTHING_TYPES = [
   { label: 'Belt', value: 'belt' },
   { label: 'Bag', value: 'bag' },
   { label: 'Accessories', value: 'accessories' },
+  { label: 'Bra', value: 'bra' },
+  { label: 'Sports Bra', value: 'sports-bra' },
+  { label: 'Underwear', value: 'underwear' },
+  { label: 'Briefs', value: 'briefs' },
+  { label: 'Boxers', value: 'boxers' },
+  { label: 'Lingerie', value: 'lingerie' },
+  { label: 'Shapewear', value: 'shapewear' },
+  { label: 'Tights', value: 'tights' },
+  { label: 'Pajamas', value: 'pajamas' },
+  { label: 'Robe', value: 'robe' },
+  { label: 'Swimwear', value: 'swimwear' },
+  { label: 'Leggings', value: 'leggings' },
+  { label: 'Gym Top', value: 'gym-top' },
+  { label: 'Joggers', value: 'joggers' },
+  { label: 'Tracksuit', value: 'tracksuit' },
+  { label: 'Base Layer', value: 'base-layer' },
 ] as const;
 
 export const OCCASIONS = [

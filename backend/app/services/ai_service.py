@@ -48,6 +48,22 @@ DESCRIPTION_PROMPT = load_prompt("clothing_description")
 
 # Valid values for validation
 VALID_TYPES = {
+    "bra",
+    "sports-bra",
+    "underwear",
+    "briefs",
+    "boxers",
+    "lingerie",
+    "shapewear",
+    "tights",
+    "pajamas",
+    "robe",
+    "swimwear",
+    "leggings",
+    "gym-top",
+    "joggers",
+    "tracksuit",
+    "base-layer",
     "shirt",
     "t-shirt",
     "pants",

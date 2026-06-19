@@ -1,3 +1,35 @@
+> ## ⚙️ F.A.S.C. self-hosted fork
+>
+> A lightly-patched fork of [`Anyesh/wardrowbe`](https://github.com/Anyesh/wardrowbe) running on the F.A.S.C. homelab. It is **built straight from this Forgejo repo by Forgejo Actions** and deployed with DockHand — no images are built by hand.
+>
+> **What's different from upstream**
+> - **Bigger clothing taxonomy** — added intimates/loungewear + activewear types (bra, underwear, lingerie, pajamas, swimwear, leggings, joggers, tracksuit…) so a whole drawer stops being tagged `unknown`.
+> - **Sharper AI input** — the vision pre-processor's downscale ceiling was raised **512px → 1024px**, so patterns and fabric detail survive to the model.
+> - **Local, private AI** — vision tagging points at a self-hosted Ollama (OpenAI-compatible), and login is gated by Authentik SSO. Both are set via env vars.
+>
+> <details>
+> <summary><b>How the build/deploy pipeline works</b></summary>
+>
+> 1. Push to <code>main</code> → <b>Forgejo Actions</b> runs <code>.forgejo/workflows/build.yml</code>.
+> 2. It builds the <b>backend</b> and <b>frontend</b> images and pushes them to the <b>Forgejo container registry</b> (e.g. <code>your-forgejo-host/you/wardrobe-backend:latest</code>).
+> 3. <b>DockHand</b> redeploys the stack, pulling those tags.
+>
+> The CI runner mounts the host Docker socket so jobs can run <code>docker build</code>; the registry is reached over the LAN and whitelisted as an <code>insecure-registries</code> entry on the Docker host.
+> </details>
+>
+> <details>
+> <summary><b>Make it yours — personalization</b></summary>
+>
+> - In <code>.forgejo/workflows/build.yml</code>, swap the registry host <code>192.168.1.209:3300</code> and owner <code>xenarathon</code> for your own Forgejo host + username.
+> - Add a repo Actions secret <b><code>REGISTRY_TOKEN</code></b> = a Forgejo token with <code>write:package</code> scope.
+> - Point the app at your AI + SSO with the <code>WARDROWBE_AI_*</code> and <code>WARDROWBE_OIDC_*</code> env vars (see the Quick Start below).
+> - Plain-HTTP LAN registry? Add it to the Docker daemon's <code>insecure-registries</code>, or front it with TLS.
+> </details>
+>
+> *Fork changes were made with the help of **Claude (Opus 4.8)**.*
+
+---
+
 <p align="center">
   <img src="./frontend/public/logo.svg" alt="wardrowbe" width="120" height="120">
 </p>

@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.models.item import ClothingItem, ItemStatus
 from app.services.ai_service import AIService, ClothingTags
-from app.config import settings
+from app.config import get_settings
 from app.workers.db import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
         # New uploads get a clean, flat-background image automatically, so the
         # user no longer has to open the item, click "remove background", and
         # re-trigger the scan by hand.
-        if settings.auto_remove_background and item_image_path:
+        if get_settings().auto_remove_background and item_image_path:
             try:
                 from app.services.image_service import ImageService
 

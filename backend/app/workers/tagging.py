@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -7,6 +8,7 @@ from sqlalchemy import select
 
 from app.models.item import ClothingItem, ItemStatus
 from app.services.ai_service import AIService, ClothingTags
+from app.config import settings
 from app.workers.db import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -94,12 +96,14 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
 
         # Get user's AI endpoints from preferences
         ai_endpoints = None
+        item_image_path = None
         db = get_db_session(ctx)
         try:
             # Get the item to find user_id
             result = await db.execute(select(ClothingItem).where(ClothingItem.id == UUID(item_id)))
             item = result.scalar_one_or_none()
             if item:
+                item_image_path = item.image_path
                 # Get user's preferences for AI endpoints
                 from app.models.preference import UserPreference
 
@@ -114,6 +118,23 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
                     )
         finally:
             await db.close()
+
+        # --- F.A.S.C. fork: auto-remove background before AI tagging ---
+        # New uploads get a clean, flat-background image automatically, so the
+        # user no longer has to open the item, click "remove background", and
+        # re-trigger the scan by hand.
+        if settings.auto_remove_background and item_image_path:
+            try:
+                from app.services.image_service import ImageService
+
+                img_svc = ImageService()
+                await asyncio.to_thread(img_svc.remove_background, item_image_path)
+                path = img_svc.storage_path / item_image_path
+                logger.info(f"Auto-removed background for item {item_id} before tagging")
+            except ImportError:
+                logger.warning("Background-removal provider unavailable; tagging original image")
+            except Exception as e:
+                logger.warning(f"Auto bg-removal failed for item {item_id}: {e}; using original")
 
         # Analyze with AI (uses custom endpoints if available)
         ai_service = AIService(endpoints=ai_endpoints)

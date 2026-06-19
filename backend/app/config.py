@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=10)
 
     # Background removal
+    auto_remove_background: bool = Field(default=True)  # auto-run bg removal before AI tagging on new uploads
     bg_removal_provider: str = Field(default="rembg")  # "rembg" or "http"
     bg_removal_model: str = Field(default="u2net")  # rembg model name
     bg_removal_url: str | None = Field(default=None)  # URL for http provider (e.g. withoutbg)

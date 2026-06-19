@@ -314,8 +314,8 @@ class AIService:
             # Auto-orient based on EXIF
             img = ImageOps.exif_transpose(img)
 
-            # Resize to max 512x512 for faster AI processing
-            max_size = 512
+            # Resize to max 1024x1024 (raised from 512 for finer garment detail)
+            max_size = 1024
             img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
             # Convert to JPEG bytes

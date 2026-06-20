@@ -12,18 +12,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Log in to Forgejo registry
-        run: echo "${{ secrets.REGISTRY_TOKEN }}" | docker login 192.168.1.209:3300 -u xenarathon --password-stdin
+        run: echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ${{ vars.REGISTRY_HOST }} -u ${{ github.repository_owner }} --password-stdin
 
       - name: Build & push backend image
         run: |
-          IMG=192.168.1.209:3300/xenarathon/wardrobe-backend
+          IMG=${{ vars.REGISTRY_HOST }}/${{ github.repository_owner }}/wardrobe-backend
           docker build -t "$IMG:latest" -t "$IMG:${{ github.sha }}" ./backend
           docker push "$IMG:latest"
           docker push "$IMG:${{ github.sha }}"
 
       - name: Build & push frontend image
         run: |
-          IMG=192.168.1.209:3300/xenarathon/wardrobe-frontend
+          IMG=${{ vars.REGISTRY_HOST }}/${{ github.repository_owner }}/wardrobe-frontend
           docker build --build-arg NEXT_PUBLIC_API_URL="" -t "$IMG:latest" -t "$IMG:${{ github.sha }}" ./frontend
           docker push "$IMG:latest"
           docker push "$IMG:${{ github.sha }}"

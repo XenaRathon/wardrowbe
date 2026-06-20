@@ -20,7 +20,7 @@
 > <details>
 > <summary><b>Make it yours — personalization</b></summary>
 >
-> - In <code>.forgejo/workflows/build.yml</code>, swap the registry host <code>192.168.1.209:3300</code> and owner <code>xenarathon</code> for your own Forgejo host + username.
+> - In <code>.forgejo/workflows/build.yml</code>, swap the registry host <code>your-forgejo-host:3300</code> and owner <code>your-username</code> for your own Forgejo host + username.
 > - Add a repo Actions secret <b><code>REGISTRY_TOKEN</code></b> = a Forgejo token with <code>write:package</code> scope.
 > - Point the app at your AI + SSO with the <code>WARDROWBE_AI_*</code> and <code>WARDROWBE_OIDC_*</code> env vars (see the Quick Start below).
 > - Plain-HTTP LAN registry? Add it to the Docker daemon's <code>insecure-registries</code>, or front it with TLS.

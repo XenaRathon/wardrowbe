@@ -26,7 +26,7 @@ from app.services.ai_service import AIService
 from app.services.item_scorer import get_season, score_items
 from app.services.suggestion_cache import pop_suggestion, push_suggestions
 from app.services.weather_service import WeatherData, WeatherService, WeatherServiceError
-from app.utils.clothing import deduplicate_by_body_slot
+from app.utils.clothing import INTIMATE_TYPES, deduplicate_by_body_slot, outfit_is_complete
 from app.utils.prompts import load_prompt
 from app.utils.timezone import get_user_today
 
@@ -100,6 +100,8 @@ class RecommendationService:
 
         items = [i for i in items if not i.needs_wash]
         items = [i for i in items if i.type and i.type != "unknown"]
+        # intimates / base layers are catalogued but never suggested as outfit pieces
+        items = [i for i in items if (i.type or "").lower() not in INTIMATE_TYPES]
 
         if exclude_items:
             exclude_set = set(exclude_items)
@@ -806,6 +808,32 @@ class RecommendationService:
 
             # Multi-outfit parse
             outfit_list = self._parse_multi_outfit_response(result.content)
+
+            # Keep only COMPLETE outfits (top+bottom or one-piece, plus shoes) so a
+            # top-with-no-bottom or accessories-only "outfit" is never surfaced.
+            _id_type = {}
+            for _si in scored:
+                _it = _si.item if hasattr(_si, "item") else _si
+                _id_type[_it.id] = (_it.type or "").lower()
+            _num_type = {num: _id_type.get(iid, "") for num, iid in number_map.items()}
+
+            def _types_of(od: dict) -> list:
+                out = []
+                for n in od.get("items", []):
+                    try:
+                        out.append(_num_type.get(int(n), ""))
+                    except (ValueError, TypeError):
+                        continue
+                return out
+
+            _complete = [od for od in outfit_list if outfit_is_complete(_types_of(od))]
+            if _complete:
+                outfit_list = _complete
+            else:
+                logger.warning(
+                    "AI returned no complete outfits (need top+bottom or one-piece + shoes); "
+                    "using best-effort to avoid an empty suggestion"
+                )
 
             first = outfit_list[0]
             first["_ai_model"] = result.model

@@ -11,7 +11,7 @@ from app.models.item import ClothingItem, ItemStatus
 from app.models.outfit import FamilyOutfitRating, Outfit, OutfitItem, OutfitSource, OutfitStatus
 from app.models.user import User
 from app.services.ai_service import AIService
-from app.utils.clothing import deduplicate_by_body_slot
+from app.utils.clothing import INTIMATE_TYPES, deduplicate_by_body_slot, outfit_is_complete
 from app.utils.prompts import load_prompt
 from app.utils.timezone import get_user_today
 
@@ -47,7 +47,9 @@ class PairingService:
             )
         )
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        items = list(result.scalars().all())
+        # intimates / base layers are not offered as pairing pieces
+        return [i for i in items if (i.type or "").lower() not in INTIMATE_TYPES]
 
     def _format_item_description(self, item: ClothingItem) -> str:
         parts = []
@@ -250,6 +252,11 @@ class PairingService:
 
             if len(valid_ids) < 2:
                 logger.warning("Pairing has too few valid items, skipping")
+                continue
+
+            # Only keep complete outfits (top+bottom or one-piece, plus shoes)
+            if not outfit_is_complete([item_type_map.get(iid, "") for iid in valid_ids]):
+                logger.info("Pairing is not a complete outfit (missing core or shoes), skipping")
                 continue
 
             # Create outfit

@@ -34,7 +34,48 @@ ITEM_ROLE: dict[str, str] = {
     "belt": "accessory",
     "bag": "accessory",
     "accessories": "accessory",
+    # activewear
+    "gym-top": "base_top",
+    "leggings": "bottom",
+    "joggers": "bottom",
+    "tracksuit": "full_body",
+    # one-piece / loungewear / swim (a complete look on their own)
+    "swimwear": "full_body",
+    "pajamas": "full_body",
+    "robe": "full_body",
+    # base layers / intimates: NOT part of an assembled outfit
+    "base-layer": "base_top",  # thermal top, wearable on its own
+    "bra": "intimate",
+    "sports-bra": "base_top",  # visible athletic top
+    "underwear": "intimate",
+    "briefs": "intimate",
+    "boxers": "intimate",
+    "lingerie": "intimate",
+    "shapewear": "intimate",
+    "tights": "intimate",
 }
+
+INTIMATE_TYPES = frozenset(t for t, r in ITEM_ROLE.items() if r == "intimate")
+# any of these can serve as the visible "top" of a look
+_TOP_ROLES = frozenset({"base_top", "mid_layer", "outer_layer"})
+# full-body pieces that read as a complete look without shoes
+LOUNGE_NO_SHOES = frozenset({"pajamas", "robe", "swimwear"})
+
+
+def outfit_is_complete(types) -> bool:
+    """A real outfit = (a top + a bottom) OR a one-piece, plus shoes.
+
+    A hoodie/cardigan/jacket can serve as the top. Loungewear/swim one-pieces
+    don't need shoes. Accessories, socks, ties, and base layers never make an
+    outfit on their own.
+    """
+    types_l = {(t or "").lower() for t in types if t}
+    roles = {ITEM_ROLE.get(t) for t in types_l}
+    has_top = bool(roles & _TOP_ROLES)
+    has_core = "full_body" in roles or (has_top and "bottom" in roles)
+    has_shoes = "footwear" in roles
+    is_lounge = bool(types_l & LOUNGE_NO_SHOES)
+    return has_core and (has_shoes or is_lounge)
 
 
 def deduplicate_by_body_slot(item_ids: list[UUID], item_type_map: dict[UUID, str]) -> list[UUID]:
@@ -51,6 +92,9 @@ def deduplicate_by_body_slot(item_ids: list[UUID], item_type_map: dict[UUID, str
             continue
         if role == "accessory":
             result.append(iid)
+            continue
+        if role == "intimate":
+            # base layers / underwear are not part of the assembled outfit
             continue
         if has_full_body and role in ("base_top", "bottom"):
             logger.warning(f"Removing {item_type} item {iid}: full_body item present")

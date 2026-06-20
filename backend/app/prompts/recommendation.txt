@@ -42,15 +42,19 @@ Time of day:
 AVAILABLE ITEMS:
 {items_text}
 
-RULES:
-- Pick exactly ONE top (shirt/blouse/sweater/t-shirt) + ONE bottom (pants/jeans/skirt/shorts) + ONE shoes
-- OR pick ONE dress + ONE shoes
-- OPTIONAL: ONE bag if appropriate for the occasion
-- OPTIONAL: accessories (belt, scarf, hat, jewelry) that genuinely complement the outfit
-- For cold or rainy weather, add outerwear (jacket/coat) if available
-- Every piece must earn its place — do not add items just to fill slots
-- Do NOT pick the same item number twice
-- Return item NUMBERS only
+RULES — every outfit MUST be a complete, wearable look:
+- REQUIRED core, choose ONE pattern:
+  - ONE top + ONE bottom + ONE pair of shoes, OR
+  - ONE one-piece (dress / jumpsuit / tracksuit) + ONE pair of shoes
+- TOP = shirt, t-shirt, top, blouse, polo, tank-top, sweater, hoodie, cardigan, gym-top
+- BOTTOM = pants, jeans, shorts, skirt, leggings, joggers
+- SHOES = shoes, sneakers, boots, sandals
+- NEVER return an incomplete outfit. A top with no bottom, a bottom with no top, or shoes/hat/bag with no clothing is INVALID — do not output it.
+- NEVER combine two of the same slot (two tops, two bottoms, two pairs of shoes), and never add a separate top or bottom to a one-piece.
+- OPTIONAL extras only AFTER the core is complete: ONE bag, plus accessories (belt, scarf, hat, tie, jewelry) that genuinely complement. Accessories can NEVER replace a core piece.
+- For cold or rainy weather, add outerwear (jacket / blazer / coat) over the top.
+- Do NOT use underwear, bras, or base layers — they are not part of the outfit.
+- Every piece must earn its place; do not pick the same item number twice; return item NUMBERS only.
 
 Respond with valid JSON containing exactly 3 distinct outfit options. Each must be a complete look.
 {{"outfits": [{{"items": [item numbers], "headline": "Short catchy outfit title (max 5 words)", "highlights": ["One short sentence each — vary your reasoning across color, texture, proportion, occasion, weather, or time of day"], "styling_tip": "One specific, actionable styling detail — do not suggest rolling up sleeves every time, vary your advice"}}, ...]}}

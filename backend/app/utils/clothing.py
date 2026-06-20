@@ -34,6 +34,10 @@ ITEM_ROLE: dict[str, str] = {
     "belt": "accessory",
     "bag": "accessory",
     "accessories": "accessory",
+    "jewelry": "accessory",
+    "watch": "accessory",
+    "sunglasses": "accessory",
+    "gloves": "accessory",
     # activewear
     "gym-top": "base_top",
     "leggings": "bottom",

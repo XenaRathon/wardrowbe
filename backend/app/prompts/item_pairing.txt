@@ -11,7 +11,7 @@ Create {num_pairings} DIFFERENT complete outfits. Each MUST:
 - Be a COMPLETE look: exactly ONE top + ONE bottom + ONE pair of shoes, OR ONE one-piece (dress/jumpsuit/tracksuit) + shoes. Never return a top with no bottom, or shoes/accessories with no clothing.
 - TOP = shirt, t-shirt, top, blouse, polo, tank-top, sweater, hoodie, cardigan, gym-top. BOTTOM = pants, jeans, shorts, skirt, leggings, joggers. SHOES = shoes, sneakers, boots, sandals.
 - NEVER combine two items from the same slot (two tops, two bottoms, two pairs of shoes), and never add a separate top or bottom to a one-piece.
-- Optionally add outerwear (jacket/blazer/coat) and accessories (belt, bag, jewelry, scarf, hat) AFTER the core is complete — they never replace a core piece.
+- Optionally add outerwear (jacket/blazer/coat) and accessories (belt, bag, jewelry, watch, sunglasses, gloves, scarf, hat) AFTER the core is complete — they never replace a core piece.
 - Do NOT use underwear, bras, or base layers as outfit pieces.
 
 For each outfit, explain WHY the items complement the source item (color harmony, style match, formality level).

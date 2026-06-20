@@ -48,6 +48,10 @@ DESCRIPTION_PROMPT = load_prompt("clothing_description")
 
 # Valid values for validation
 VALID_TYPES = {
+    "jewelry",
+    "watch",
+    "sunglasses",
+    "gloves",
     "bra",
     "sports-bra",
     "underwear",

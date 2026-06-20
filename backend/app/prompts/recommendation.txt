@@ -51,7 +51,7 @@ RULES — every outfit MUST be a complete, wearable look:
 - SHOES = shoes, sneakers, boots, sandals
 - NEVER return an incomplete outfit. A top with no bottom, a bottom with no top, or shoes/hat/bag with no clothing is INVALID — do not output it.
 - NEVER combine two of the same slot (two tops, two bottoms, two pairs of shoes), and never add a separate top or bottom to a one-piece.
-- OPTIONAL extras only AFTER the core is complete: ONE bag, plus accessories (belt, scarf, hat, tie, jewelry) that genuinely complement. Accessories can NEVER replace a core piece.
+- OPTIONAL extras only AFTER the core is complete: ONE bag, plus accessories (belt, scarf, hat, tie, jewelry, watch, sunglasses, gloves) that genuinely complement. Accessories can NEVER replace a core piece.
 - For cold or rainy weather, add outerwear (jacket / blazer / coat) over the top.
 - Do NOT use underwear, bras, or base layers — they are not part of the outfit.
 - Every piece must earn its place; do not pick the same item number twice; return item NUMBERS only.

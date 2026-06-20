@@ -79,7 +79,7 @@ class WorkerSettings:
 
     redis_settings = get_redis_settings()
 
-    max_jobs = 5
+    max_jobs = 1  # serial: the single-GPU Ollama (qwen3.5:4b vision) wedges under concurrent calls
     job_timeout = max(get_settings().ai_timeout * get_settings().ai_max_retries + 60, 600)
     max_tries = 3
     health_check_interval = 30

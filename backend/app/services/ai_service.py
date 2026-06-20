@@ -464,31 +464,48 @@ class AIService:
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
                 for attempt in range(self.settings.ai_max_retries):
                     try:
+                        # Native Ollama /api/chat with think disabled. qwen3.5 is a reasoning
+                        # model: on the OpenAI /v1 endpoint it loops in <think> until it hits
+                        # max_tokens and returns EMPTY content. /api/chat honours think:false ->
+                        # a fast, real answer. (Trade-off: no OpenAI logprobs; confidence falls
+                        # back to the model's self-reported value.)
+                        native_msgs = []
+                        for _m in messages:
+                            _c = _m.get("content")
+                            if isinstance(_c, str):
+                                native_msgs.append({"role": _m["role"], "content": _c})
+                            else:
+                                _texts, _imgs = [], []
+                                for _p in _c:
+                                    if _p.get("type") == "text":
+                                        _texts.append(_p.get("text", ""))
+                                    elif _p.get("type") == "image_url":
+                                        _u = _p["image_url"]["url"]
+                                        _imgs.append(_u.split("base64,", 1)[1] if "base64," in _u else _u)
+                                _nm = {"role": _m["role"], "content": "\n".join(_texts)}
+                                if _imgs:
+                                    _nm["images"] = _imgs
+                                native_msgs.append(_nm)
+                        _u = endpoint.url.rstrip("/")
+                        _base = _u[:-3].rstrip("/") if _u.endswith("/v1") else _u
                         request_body = {
                             "model": model,
-                            "messages": messages,
+                            "messages": native_msgs,
                             "stream": False,
-                            "max_tokens": self.settings.ai_max_tokens,
+                            "think": False,
+                            "options": {"num_predict": self.settings.ai_max_tokens},
                         }
-                        if request_logprobs:
-                            request_body["logprobs"] = True
-                            request_body["top_logprobs"] = 3
 
                         response = await client.post(
-                            f"{endpoint.url}/chat/completions",
+                            f"{_base}/api/chat",
                             headers=self._get_headers(),
                             json=request_body,
                         )
                         response.raise_for_status()
 
                         data = response.json()
-                        choice = data["choices"][0]
-                        content = choice["message"]["content"]
+                        content = data.get("message", {}).get("content", "")
                         logprobs_content = None
-                        if request_logprobs:
-                            lp = choice.get("logprobs")
-                            if lp:
-                                logprobs_content = lp.get("content")
 
                         used_model = data.get("model", model)
                         logger.info(

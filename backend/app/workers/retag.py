@@ -1,0 +1,91 @@
+"""Nightly re-tag backfill worker.
+
+Items tagged before the cut-attribute feature (neckline/rise/silhouette/
+sleeve_length) shipped have all four columns NULL. This worker re-runs AI
+tagging on a bounded, serial batch of such items each night so they pick up
+the new attributes without a manual re-tag.
+"""
+
+import logging
+
+from sqlalchemy import and_, select
+
+from app.models.item import ClothingItem, ItemStatus
+from app.services.ai_service import AIService
+from app.workers.db import get_db_session
+from app.workers.tagging import tags_to_item_fields
+
+logger = logging.getLogger(__name__)
+
+# Keep the batch small: tagging is serial (single-GPU Ollama, worker max_jobs=1),
+# so a large batch would block the queue for the whole cron run. Ordering by
+# updated_at means the next nightly run naturally resumes where this one left off,
+# because items just re-tagged get a fresh updated_at and sort to the back.
+BATCH_SIZE = 20
+
+# The four cut attributes introduced by the Styler tagging feature. An item is
+# only picked up for backfill when ALL of these are still NULL.
+CUT_ATTRIBUTES = ("neckline", "rise", "silhouette", "sleeve_length")
+
+
+async def check_retag_backfill(ctx: dict):
+    """Backfill cut attributes for a bounded batch of pre-feature items.
+
+    arq's cron scheduling gives each scheduled run a single, deterministic
+    job id cluster-wide, so this doesn't double up even if multiple worker
+    processes share the same redis queue — no separate distributed lock is
+    needed on top of that (matches `recover_stale_processing_items` /
+    `update_learning_profiles`, the other unlocked crons in this worker).
+    """
+    logger.info("Checking for items needing cut-attribute re-tag backfill...")
+
+    db = get_db_session(ctx)
+    try:
+        result = await db.execute(
+            select(ClothingItem)
+            .where(
+                and_(
+                    ClothingItem.status == ItemStatus.ready,
+                    ClothingItem.image_path.isnot(None),
+                    ClothingItem.neckline.is_(None),
+                    ClothingItem.rise.is_(None),
+                    ClothingItem.silhouette.is_(None),
+                    ClothingItem.sleeve_length.is_(None),
+                )
+            )
+            .order_by(ClothingItem.updated_at)
+            .limit(BATCH_SIZE)
+        )
+        items = list(result.scalars().all())
+
+        if not items:
+            logger.info("No items need cut-attribute backfill")
+            return {"retagged": 0}
+
+        ai_service = AIService()
+        retagged = 0
+
+        for item in items:
+            try:
+                tags = await ai_service.analyze_image(item.image_path)
+                fields = tags_to_item_fields(tags)
+
+                for field in (*CUT_ATTRIBUTES, "subtype"):
+                    setattr(item, field, fields[field])
+
+                await db.commit()
+                retagged += 1
+                logger.info(f"Backfilled cut attributes for item {item.id}")
+            except Exception as e:
+                logger.warning(f"Failed to backfill cut attributes for item {item.id}: {e}")
+                await db.rollback()
+                continue
+
+        logger.info(f"Backfilled cut attributes for {retagged}/{len(items)} items")
+        return {"retagged": retagged, "checked": len(items)}
+
+    except Exception as e:
+        logger.exception("Error in check_retag_backfill")
+        return {"retagged": 0, "error": str(e)}
+    finally:
+        await db.close()

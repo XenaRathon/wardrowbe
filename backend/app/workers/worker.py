@@ -16,6 +16,7 @@ from app.workers.notifications import (
     send_notification,
     update_learning_profiles,
 )
+from app.workers.retag import check_retag_backfill
 from app.workers.settings import get_redis_settings
 from app.workers.tagging import tag_item_image
 
@@ -68,6 +69,7 @@ class WorkerSettings:
         process_scheduled_notification,
         check_wash_reminders,
         update_learning_profiles,
+        check_retag_backfill,
     ]
 
     cron_jobs = [
@@ -76,6 +78,7 @@ class WorkerSettings:
         cron(check_wash_reminders, minute=15, hour={0, 6, 12, 18}),
         cron(update_learning_profiles, minute=30, hour=None),
         cron(recover_stale_processing_items, minute={0, 15, 30, 45}),
+        cron(check_retag_backfill, hour={3}),
     ]
 
     on_startup = startup

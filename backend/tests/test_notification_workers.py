@@ -373,6 +373,7 @@ class TestWorkerFunctionRegistry:
             "check_scheduled_notifications",
             "check_wash_reminders",
             "update_learning_profiles",
+            "check_retag_backfill",
         }
         missing = required - func_names
         assert not missing, f"Functions enqueued but not registered in WorkerSettings: {missing}"

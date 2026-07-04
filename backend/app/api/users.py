@@ -4,9 +4,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
 from app.models.user import User
+from app.schemas.preference import StyleProfile
+from app.services.body_analysis import analyze_measurements
+from app.services.preference_service import PreferenceService
 from app.services.user_service import UserService
 from app.utils.auth import get_current_user
 
@@ -67,6 +71,17 @@ async def update_profile(
 
     for field, value in update_data.items():
         setattr(current_user, field, value)
+
+    if "body_measurements" in update_data and update_data["body_measurements"] is not None:
+        analysis = analyze_measurements(current_user.body_measurements)
+        preference_service = PreferenceService(db)
+        preferences = await preference_service.get_or_create_preferences(current_user.id)
+        profile = StyleProfile(**(preferences.style_profile or {}))
+        profile.body_shape = analysis["body_shape"]
+        profile.vertical_line = analysis["vertical_line"]
+        profile.frame = analysis["frame"]
+        preferences.style_profile = profile.model_dump()
+        flag_modified(preferences, "style_profile")
 
     await db.flush()
     await db.refresh(current_user)

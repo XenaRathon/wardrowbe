@@ -61,6 +61,64 @@ class TestUserUpdate:
         assert float(data["location_lon"]) == pytest.approx(-74.0060, rel=1e-4)
 
 
+class TestBodyMeasurementsAnalysis:
+    """Tests that saving body_measurements populates deterministic style_profile fields."""
+
+    @pytest.mark.asyncio
+    async def test_measurements_save_populates_style_profile(
+        self, client: AsyncClient, test_user, auth_headers
+    ):
+        response = await client.patch(
+            "/api/v1/users/me",
+            json={
+                "body_measurements": {
+                    "bust": 94,
+                    "waist": 68,
+                    "hips": 96,
+                    "shoulders": 94,
+                    "height": 168,
+                    "inseam": 78,
+                    "wrist": 15,
+                }
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        prefs_response = await client.get("/api/v1/users/me/preferences", headers=auth_headers)
+        assert prefs_response.status_code == 200
+        style_profile = prefs_response.json()["style_profile"]
+        assert style_profile["body_shape"] == "hourglass"
+        assert style_profile["vertical_line"] == "balanced"
+        assert style_profile["frame"] == "small"
+
+    @pytest.mark.asyncio
+    async def test_measurements_save_does_not_overwrite_existing_sliders(
+        self, client: AsyncClient, test_user, auth_headers, db_session
+    ):
+        # Seed a non-default style slider + kibbe_lean to ensure the wiring only
+        # touches body_shape/vertical_line/frame.
+        prefs_response = await client.patch(
+            "/api/v1/users/me/preferences",
+            json={"style_profile": {"casual": 80, "kibbe_lean": "romantic"}},
+            headers=auth_headers,
+        )
+        assert prefs_response.status_code == 200
+
+        response = await client.patch(
+            "/api/v1/users/me",
+            json={"body_measurements": {"bust": 94, "waist": 68, "hips": 96, "shoulders": 94}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        prefs_response = await client.get("/api/v1/users/me/preferences", headers=auth_headers)
+        style_profile = prefs_response.json()["style_profile"]
+        assert style_profile["casual"] == 80
+        assert style_profile["kibbe_lean"] == "romantic"
+        assert style_profile["body_shape"] == "hourglass"
+
+
 class TestOnboarding:
     """Tests for onboarding completion endpoint."""
 

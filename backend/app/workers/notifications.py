@@ -27,6 +27,7 @@ from app.services.notification_service import DeliveryStatus, NotificationDispat
 from app.services.recommendation_service import RecommendationService
 from app.services.weather_service import WeatherService
 from app.utils.redis_lock import distributed_lock
+from app.utils.timezone import get_user_now
 from app.workers.db import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -425,6 +426,7 @@ async def _check_wash_reminders_inner(ctx: dict):
                             provider = NtfyProvider(NtfyConfig(**channel.config))
                             send_result = await provider.send(
                                 NtfyNotification(
+                                    topic="",
                                     title=title,
                                     message=body,
                                     click=f"{app_url}/dashboard/wardrobe",
@@ -493,6 +495,151 @@ async def _check_wash_reminders_inner(ctx: dict):
 
     except Exception as e:
         logger.exception("Error in check_wash_reminders")
+        return {"error": str(e)}
+    finally:
+        await db.close()
+
+
+async def check_wear_nudges(ctx: dict):
+    """For every user with wear_nudge_enabled whose local time has passed their
+    wear_nudge_time today and who hasn't logged an outfit as worn today, send a
+    one-shot "What did you wear today?" reminder. Deduped via Redis so at most
+    one nudge fires per user per (local) day, regardless of how often the cron
+    tick runs.
+    """
+    logger.info("Checking wear nudges...")
+
+    db = get_db_session(ctx)
+    try:
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.preferences))
+            .where(User.is_active.is_(True))
+        )
+        users = list(result.scalars().all())
+
+        redis = ctx.get("redis")
+        app_url = os.getenv("APP_URL", "http://localhost:3000")
+        notified = 0
+
+        for user in users:
+            pref = user.preferences
+            if pref is None or not pref.wear_nudge_enabled:
+                continue
+
+            try:
+                now_local = get_user_now(user)
+                today = now_local.date()
+
+                if now_local.time() < pref.wear_nudge_time:
+                    continue
+
+                dedup_key = f"wear_nudge:{user.id}:{today.isoformat()}"
+                if redis is not None and await redis.get(dedup_key):
+                    logger.debug(f"Skipping wear nudge for {user.id} - already sent today")
+                    continue
+
+                worn_result = await db.execute(
+                    select(Outfit.id)
+                    .where(Outfit.user_id == user.id, Outfit.worn_at == today)
+                    .limit(1)
+                )
+                if worn_result.scalar_one_or_none() is not None:
+                    continue
+
+                channels_result = await db.execute(
+                    select(NotificationSettings).where(
+                        and_(
+                            NotificationSettings.user_id == user.id,
+                            NotificationSettings.enabled == True,  # noqa: E712
+                        )
+                    )
+                )
+                channels = list(channels_result.scalars().all())
+                if not channels:
+                    continue
+
+                title = "What did you wear today?"
+                body = "You haven't logged an outfit for today yet - tap to log it."
+
+                sent = False
+                sent_channel = "unknown"
+                for channel in channels:
+                    try:
+                        if channel.channel == "ntfy":
+                            provider = NtfyProvider(NtfyConfig(**channel.config))
+                            send_result = await provider.send(
+                                NtfyNotification(
+                                    topic="",
+                                    title=title,
+                                    message=body,
+                                    click=f"{app_url}/dashboard/calendar",
+                                    tags=["thinking_face"],
+                                )
+                            )
+                            sent = send_result.get("success", False)
+                            sent_channel = "ntfy"
+                        elif channel.channel == "email":
+                            email_provider = EmailProvider(EmailConfig(**channel.config))
+                            send_result = await email_provider.send(
+                                build_notification_email(
+                                    to=email_provider.to_address,
+                                    subject=title,
+                                    heading=title,
+                                    body=body,
+                                    cta_text="Log Today's Outfit",
+                                    cta_url=f"{app_url}/dashboard/calendar",
+                                    app_url=app_url,
+                                )
+                            )
+                            sent = send_result.get("success", False)
+                            sent_channel = "email"
+                        elif channel.channel == "expo_push":
+                            provider = ExpoPushProvider(ExpoPushConfig(**channel.config))
+                            send_result = await provider.send(
+                                ExpoPushMessage(
+                                    title=title,
+                                    body=body,
+                                    data={"screen": "calendar"},
+                                )
+                            )
+                            sent = send_result.get("success", False)
+                            sent_channel = "expo_push"
+
+                        if sent:
+                            break
+                    except Exception as e:
+                        logger.warning(f"Failed to send wear nudge via {channel.channel}: {e}")
+
+                # Dedup regardless of delivery success - at most one *attempt* per
+                # user per day, matching the retry-via-normal-notification-flow
+                # semantics used elsewhere (a failed send here isn't auto-retried).
+                if redis is not None:
+                    await redis.set(dedup_key, "1", ex=60 * 60 * 24)
+
+                notification = Notification(
+                    user_id=user.id,
+                    channel=sent_channel,
+                    status=NotificationStatus.sent if sent else NotificationStatus.failed,
+                    payload={"type": "wear_nudge", "title": title, "body": body},
+                    sent_at=datetime.now(UTC) if sent else None,
+                    error_message=None if sent else "All channels failed",
+                )
+                db.add(notification)
+                await db.commit()
+
+                if sent:
+                    notified += 1
+
+            except Exception as e:
+                logger.warning(f"Failed to send wear nudge for user {user.id}: {e}")
+                continue
+
+        logger.info(f"Sent wear nudges to {notified} users")
+        return {"notified": notified}
+
+    except Exception as e:
+        logger.exception("Error in check_wear_nudges")
         return {"error": str(e)}
     finally:
         await db.close()

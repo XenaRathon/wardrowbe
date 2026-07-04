@@ -7,13 +7,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.notification import NotificationSettings
+from app.models.notification import Notification, NotificationSettings, NotificationStatus
+from app.models.preference import UserPreference
 from app.models.schedule import Schedule
 from app.models.user import User
-from app.workers.notifications import check_scheduled_notifications, process_scheduled_notification
+from app.workers.notifications import (
+    check_scheduled_notifications,
+    check_wear_nudges,
+    process_scheduled_notification,
+)
 from app.workers.worker import WorkerSettings
 
 
@@ -56,6 +61,70 @@ async def ntfy_channel(db_session: AsyncSession, schedule_user: User) -> Notific
     await db_session.commit()
     await db_session.refresh(channel)
     return channel
+
+
+@pytest_asyncio.fixture
+async def nudge_user(db_session: AsyncSession) -> User:
+    """A user with wear_nudge_enabled and a wear_nudge_time comfortably in the
+    past, so `check_wear_nudges` always considers them due regardless of
+    wall-clock time when the suite runs."""
+    unique_id = uuid.uuid4()
+    user = User(
+        id=unique_id,
+        external_id=f"nudge-user-{unique_id}",
+        email=f"nudge-{unique_id}@example.com",
+        display_name="Nudge User",
+        timezone="UTC",
+        is_active=True,
+        onboarding_completed=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    pref = UserPreference(
+        user_id=user.id,
+        wear_nudge_enabled=True,
+        wear_nudge_time=_past_time(),
+    )
+    db_session.add(pref)
+    await db_session.commit()
+    return user
+
+
+@pytest_asyncio.fixture
+async def nudge_ntfy_channel(db_session: AsyncSession, nudge_user: User) -> NotificationSettings:
+    channel = NotificationSettings(
+        user_id=nudge_user.id,
+        channel="ntfy",
+        enabled=True,
+        config={"server": "https://ntfy.sh", "topic": "nudge-topic"},
+    )
+    db_session.add(channel)
+    await db_session.commit()
+    await db_session.refresh(channel)
+    return channel
+
+
+class _FakeRedis:
+    """Minimal in-memory stand-in for the arq redis pool's get/set, so the
+    dedup-key round trip (check_wear_nudges reads back its own write) can be
+    exercised across two real invocations instead of mocking away the logic
+    under test."""
+
+    def __init__(self):
+        self.store: dict[str, str] = {}
+
+    async def get(self, key: str):
+        return self.store.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None):
+        self.store[key] = value
+
+
+def _past_time(hours_ago: int = 1) -> time:
+    target = datetime.now(UTC) - timedelta(hours=hours_ago)
+    return time(target.hour, target.minute)
 
 
 def _make_due_schedule(
@@ -355,6 +424,103 @@ class TestProcessScheduledNotification:
                 await process_scheduled_notification(ctx, str(schedule.id))
 
 
+# ── check_wear_nudges ──
+
+
+class TestCheckWearNudges:
+    @pytest.mark.asyncio
+    async def test_sends_one_nudge_then_dedupes_on_second_run(
+        self, db_session: AsyncSession, nudge_user: User, nudge_ntfy_channel: NotificationSettings
+    ):
+        fake_redis = _FakeRedis()
+        ctx = {"redis": fake_redis}
+        mock_send = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch("app.workers.notifications.NtfyProvider.send", mock_send),
+        ):
+            await check_wear_nudges(ctx)
+            await check_wear_nudges(ctx)
+
+        # The full users table is shared (uncommitted-transaction rollback isn't
+        # used in this test DB), so other tests' users may also be scanned and
+        # notified. Scope assertions to this test's own user via its Notification
+        # rows rather than the aggregate "notified" count.
+        notifications = (
+            await db_session.execute(
+                select(Notification).where(
+                    Notification.user_id == nudge_user.id,
+                    Notification.payload["type"].astext == "wear_nudge",
+                )
+            )
+        ).scalars().all()
+
+        assert len(notifications) == 1
+        assert notifications[0].status == NotificationStatus.sent
+
+    @pytest.mark.asyncio
+    async def test_skips_user_with_outfit_already_worn_today(
+        self, db_session: AsyncSession, nudge_user: User, nudge_ntfy_channel: NotificationSettings
+    ):
+        from app.models.outfit import Outfit
+
+        outfit = Outfit(
+            id=uuid.uuid4(),
+            user_id=nudge_user.id,
+            occasion="casual",
+            worn_at=datetime.now(UTC).date(),
+        )
+        db_session.add(outfit)
+        await db_session.commit()
+
+        ctx = {"redis": _FakeRedis()}
+        mock_send = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch("app.workers.notifications.NtfyProvider.send", mock_send),
+        ):
+            await check_wear_nudges(ctx)
+
+        notifications = (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == nudge_user.id)
+            )
+        ).scalars().all()
+        assert notifications == []
+
+    @pytest.mark.asyncio
+    async def test_skips_user_with_nudges_disabled(
+        self, db_session: AsyncSession, nudge_user: User, nudge_ntfy_channel: NotificationSettings
+    ):
+        await db_session.execute(
+            UserPreference.__table__.update()
+            .where(UserPreference.user_id == nudge_user.id)
+            .values(wear_nudge_enabled=False)
+        )
+        await db_session.commit()
+
+        ctx = {"redis": _FakeRedis()}
+        mock_send = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch("app.workers.notifications.NtfyProvider.send", mock_send),
+        ):
+            await check_wear_nudges(ctx)
+
+        notifications = (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == nudge_user.id)
+            )
+        ).scalars().all()
+        assert notifications == []
+
+
 # ── Worker registry ──
 
 
@@ -372,6 +538,7 @@ class TestWorkerFunctionRegistry:
             "retry_failed_notifications",
             "check_scheduled_notifications",
             "check_wash_reminders",
+            "check_wear_nudges",
             "update_learning_profiles",
         }
         missing = required - func_names

@@ -1,6 +1,7 @@
 """Tests for the nightly re-tag backfill worker (check_retag_backfill)."""
 
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,6 +14,11 @@ from app.models.item import ClothingItem, ItemStatus
 from app.models.user import User
 from app.services.ai_service import AIService, ClothingTags
 from app.workers.retag import check_retag_backfill
+
+# The four cut attributes the Styler tagging feature introduced; used below to
+# build a ClothingTags response for un-enrichable item types (footwear, bags,
+# belts, etc.) that legitimately never get any of them.
+_ALL_NONE_CUT_ATTRS = {"neckline": None, "rise": None, "silhouette": None, "sleeve_length": None}
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -37,7 +43,13 @@ async def retag_user(db_session: AsyncSession) -> User:
     return user
 
 
-def _make_item(user: User, *, neckline: str | None = None, image_path: str = "items/foo.jpg"):
+def _make_item(
+    user: User,
+    *,
+    neckline: str | None = None,
+    image_path: str = "items/foo.jpg",
+    cut_attrs_checked_at=None,
+):
     return ClothingItem(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -50,6 +62,7 @@ def _make_item(user: User, *, neckline: str | None = None, image_path: str = "it
         rise=None,
         silhouette=None,
         sleeve_length=None,
+        cut_attrs_checked_at=cut_attrs_checked_at,
     )
 
 
@@ -91,14 +104,19 @@ class TestCheckRetagBackfill:
         assert item.neckline == "v-neck"
         assert item.silhouette == "slim"
         assert item.sleeve_length == "long"
+        assert item.cut_attrs_checked_at is not None
         analyze_mock.assert_called_once()
         assert result["retagged"] == 1
 
     @pytest.mark.asyncio
-    async def test_item_with_existing_cut_attr_is_not_retagged(
+    async def test_item_already_checked_is_not_retagged(
         self, db_session: AsyncSession, retag_user: User
     ):
-        item = _make_item(retag_user, neckline="crew")
+        """Once cut_attrs_checked_at is set (whatever the cut attr values),
+        the item has left the candidate set for good — the gate is the
+        checked marker, not the attribute values themselves.
+        """
+        item = _make_item(retag_user, neckline="crew", cut_attrs_checked_at=datetime.now(UTC))
         db_session.add(item)
         await db_session.commit()
 
@@ -173,3 +191,54 @@ class TestCheckRetagBackfill:
         assert item.silhouette == "slim"
         assert item.sleeve_length == "long"
         assert result["retagged"] == 1
+
+    @pytest.mark.asyncio
+    async def test_unenrichable_item_is_checked_once_and_not_retagged_again(
+        self, db_session: AsyncSession, retag_user: User
+    ):
+        """Item types that legitimately never get cut attributes (footwear,
+        bags, belts, socks, ties, jewelry, watches, hats, gloves, scarves,
+        ...) must still leave the candidate set after one analysis pass.
+
+        Pre-fix, the gate re-selected "all four cut attrs NULL" every run:
+        analyze_image legitimately returns all-None cut attrs for these
+        types, setattr(item, field, None) is a no-op, updated_at never
+        bumps, and the item sorts to the front of every subsequent batch
+        forever — a real GPU call each night, and (at BATCH_SIZE-or-more
+        such items) permanent starvation of enrichable items. This test
+        fails against that code because the second run's analyze_mock would
+        be invoked a second time.
+        """
+        item = _make_item(retag_user, image_path="items/shoe.jpg")
+        db_session.add(item)
+        await db_session.commit()
+
+        analyze_mock = AsyncMock(return_value=_fake_tags(**_ALL_NONE_CUT_ATTRS))
+        ctx: dict = {}
+
+        with (
+            patch("app.workers.retag.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch.object(AIService, "analyze_image", analyze_mock),
+        ):
+            first_result = await check_retag_backfill(ctx)
+
+        await db_session.refresh(item)
+        assert item.neckline is None
+        assert item.rise is None
+        assert item.silhouette is None
+        assert item.sleeve_length is None
+        assert item.cut_attrs_checked_at is not None
+        analyze_mock.assert_called_once()
+        assert first_result["retagged"] == 1
+
+        # Second nightly run: the item must not be picked up again.
+        with (
+            patch("app.workers.retag.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch.object(AIService, "analyze_image", analyze_mock),
+        ):
+            second_result = await check_retag_backfill(ctx)
+
+        analyze_mock.assert_called_once()  # still just the one call from the first run
+        assert second_result["retagged"] == 0

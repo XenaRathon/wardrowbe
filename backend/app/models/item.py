@@ -66,6 +66,12 @@ class ClothingItem(Base):
     rise: Mapped[str | None] = mapped_column(String(30))
     silhouette: Mapped[str | None] = mapped_column(String(30))
     sleeve_length: Mapped[str | None] = mapped_column(String(30))
+    # Set once an item has been through cut-attribute analysis (regardless of
+    # whether the type actually yields any cut attributes), so the nightly
+    # retag backfill worker (app/workers/retag.py) treats it as done and
+    # never re-tags it again. Prevents un-enrichable types (footwear, bags,
+    # belts, etc.) from starving the batch forever.
+    cut_attrs_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # AI metadata
     status: Mapped[ItemStatus] = mapped_column(

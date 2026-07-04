@@ -1,12 +1,22 @@
 """Nightly re-tag backfill worker.
 
 Items tagged before the cut-attribute feature (neckline/rise/silhouette/
-sleeve_length) shipped have all four columns NULL. This worker re-runs AI
-tagging on a bounded, serial batch of such items each night so they pick up
-the new attributes without a manual re-tag.
+sleeve_length) shipped have never been checked for those attributes. This
+worker re-runs AI tagging on a bounded, serial batch of such items each night
+so they pick up the new attributes without a manual re-tag.
+
+Candidates are selected via `cut_attrs_checked_at IS NULL`, not "all four cut
+attrs are NULL" — many item types (footwear, bags, belts, socks, ties,
+jewelry, watches, hats, gloves, scarves, ...) legitimately never get cut
+attributes, so `analyze_image` returns all-None for them and the old
+all-NULL gate re-selected them forever (a real GPU call every night,
+starving genuinely-enrichable items out of the bounded batch). Setting
+`cut_attrs_checked_at` after a successful analysis — regardless of whether it
+produced any cut attribute — gives every item a terminal "checked" state.
 """
 
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, select
 
@@ -24,8 +34,7 @@ logger = logging.getLogger(__name__)
 # because items just re-tagged get a fresh updated_at and sort to the back.
 BATCH_SIZE = 20
 
-# The four cut attributes introduced by the Styler tagging feature. An item is
-# only picked up for backfill when ALL of these are still NULL.
+# The four cut attributes introduced by the Styler tagging feature.
 CUT_ATTRIBUTES = ("neckline", "rise", "silhouette", "sleeve_length")
 
 
@@ -48,10 +57,7 @@ async def check_retag_backfill(ctx: dict):
                 and_(
                     ClothingItem.status == ItemStatus.ready,
                     ClothingItem.image_path.isnot(None),
-                    ClothingItem.neckline.is_(None),
-                    ClothingItem.rise.is_(None),
-                    ClothingItem.silhouette.is_(None),
-                    ClothingItem.sleeve_length.is_(None),
+                    ClothingItem.cut_attrs_checked_at.is_(None),
                 )
             )
             .order_by(ClothingItem.updated_at)
@@ -77,6 +83,10 @@ async def check_retag_backfill(ctx: dict):
                     setattr(item, field, fields[field])
                 if item.subtype is None:
                     item.subtype = fields["subtype"]
+                # Mark checked regardless of whether any cut attribute came
+                # back non-None — un-enrichable types (footwear, bags, etc.)
+                # must still leave the candidate set permanently.
+                item.cut_attrs_checked_at = datetime.now(UTC)
 
                 await db.commit()
                 retagged += 1

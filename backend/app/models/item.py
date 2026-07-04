@@ -61,6 +61,12 @@ class ClothingItem(Base):
     formality: Mapped[str | None] = mapped_column(String(50))
     season: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
 
+    # Cut attributes
+    neckline: Mapped[str | None] = mapped_column(String(30))
+    rise: Mapped[str | None] = mapped_column(String(30))
+    silhouette: Mapped[str | None] = mapped_column(String(30))
+    sleeve_length: Mapped[str | None] = mapped_column(String(30))
+
     # AI metadata
     status: Mapped[ItemStatus] = mapped_column(
         Enum(ItemStatus, name="item_status"), default=ItemStatus.processing

@@ -69,6 +69,10 @@ class ItemUpdate(BaseModel):
     colors: list[str] | None = None
     primary_color: str | None = None
     wash_interval: int | None = None
+    neckline: str | None = None
+    rise: str | None = None
+    silhouette: str | None = None
+    sleeve_length: str | None = None
 
 
 class ItemResponse(ItemBase):
@@ -87,6 +91,10 @@ class ItemResponse(ItemBase):
     style: list[str] = Field(default_factory=list)
     formality: str | None = None
     season: list[str] = Field(default_factory=list)
+    neckline: str | None = None
+    rise: str | None = None
+    silhouette: str | None = None
+    sleeve_length: str | None = None
     status: str
     ai_processed: bool = False
     ai_confidence: Decimal | None = None

@@ -43,6 +43,10 @@ def tags_to_item_fields(tags: ClothingTags, raw_response: str | None = None) -> 
         "style": tags.style,
         "formality": tags.formality,
         "season": tags.season,
+        "neckline": tags.neckline,
+        "rise": tags.rise,
+        "silhouette": tags.silhouette,
+        "sleeve_length": tags.sleeve_length,
         "tags": tags_jsonb,  # Populate the tags JSONB field for frontend
         "ai_processed": True,
         "ai_confidence": tags.confidence,

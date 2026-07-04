@@ -51,8 +51,8 @@ class TestValidateOidcIdToken:
     @pytest.mark.asyncio
     async def test_accepts_token_when_issuer_claim_has_trailing_slash(self, rsa_key):
         # Authentik issues iss with a trailing slash; the configured env var omits
-        # it. Validation must succeed because it checks the discovery issuer, not
-        # the raw configured URL.
+        # it. Validation must succeed because the issuer check normalizes trailing
+        # slashes when comparing the token iss against the configured issuer_url.
         token = _make_id_token(rsa_key, iss=CANONICAL_ISSUER)
 
         with (

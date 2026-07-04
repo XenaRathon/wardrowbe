@@ -82,12 +82,24 @@ async def validate_oidc_id_token(
             signing_key.key,
             algorithms=["RS256", "ES256"],
             audience=audience,
-            issuer=expected_issuer,
-            options={"verify_exp": True},
+            # Issuer is verified manually below (trailing-slash normalized), so
+            # PyJWT's exact-match iss check is disabled here.
+            options={"verify_exp": True, "verify_iss": False},
         )
     except jwt.PyJWTError as e:
         # Log the failure reason server-side (no token claims); raise a generic message.
         logger.warning("OIDC token validation failed: %s: %s", type(e).__name__, e)
         raise ValueError("Invalid OIDC token") from None
+
+    # Validate the issuer with trailing-slash normalization. Authentik stamps the
+    # slashed public URL on tokens, but operators may configure OIDC_ISSUER_URL with
+    # or without the trailing slash; a one-character mismatch must not silently break
+    # every login. Signature/audience/expiry are already enforced by jwt.decode above.
+    token_iss = str(payload.get("iss", ""))
+    if token_iss.rstrip("/") != expected_issuer.rstrip("/"):
+        logger.warning(
+            "OIDC issuer mismatch: token iss=%r expected=%r", token_iss, expected_issuer
+        )
+        raise ValueError("Invalid OIDC token")
 
     return payload

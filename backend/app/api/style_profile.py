@@ -3,13 +3,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
 from app.models.user import User
-from app.schemas.preference import StyleProfile
 from app.services.ai_service import AIDisabledError
-from app.services.style_service import StyleService
+from app.services.style_service import StyleDraftError, StyleService
 from app.utils.auth import get_current_user
 
 router = APIRouter(prefix="/style-profile", tags=["Style Profile"])
@@ -44,17 +42,8 @@ async def update_style_profile(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     service = StyleService(db)
-    preferences = await service.preference_service.get_or_create_preferences(current_user.id)
-
-    profile = StyleProfile(**(preferences.style_profile or {}))
     update_data = data.model_dump(exclude_unset=True)
-    for field in ("color_season", "kibbe_lean", "palette", "season_confirmed", "kibbe_confirmed"):
-        if field in update_data:
-            setattr(profile, field, update_data[field])
-
-    preferences.style_profile = profile.model_dump()
-    flag_modified(preferences, "style_profile")
-    await db.commit()
+    await service.update_confirmed(current_user, update_data)
 
     return await service.get_profile(current_user)
 
@@ -72,4 +61,9 @@ async def draft_style_profile(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Internal AI is disabled; style drafting is deferred to an external agent.",
+        ) from None
+    except StyleDraftError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
         ) from None

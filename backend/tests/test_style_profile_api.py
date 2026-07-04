@@ -1,5 +1,8 @@
+import httpx
 import pytest
 from unittest.mock import AsyncMock, patch
+
+from app.services.ai_service import AIDisabledError
 
 
 @pytest.mark.asyncio
@@ -28,3 +31,75 @@ async def test_draft_returns_advisory_labels(client, auth_headers):
                               json={"hints": {"undertone": "cool", "contrast": "high"}})
     assert r.status_code == 200
     assert r.json()["color_season"] == "cool-winter"
+
+
+@pytest.mark.asyncio
+async def test_draft_ai_failure_returns_503_not_500(client, auth_headers):
+    """When every AI endpoint is unreachable, _call_model's raw httpx error must be
+    translated to a clean 503 (StyleDraftError), not bubble up as an unhandled 500."""
+    with patch(
+        "app.services.style_service.StyleService._call_model",
+        new=AsyncMock(side_effect=httpx.RequestError("connection refused")),
+    ):
+        r = await client.post(
+            "/api/v1/style-profile/draft",
+            headers=auth_headers,
+            json={"hints": {"undertone": "cool"}},
+        )
+    assert r.status_code == 503
+    assert "AI" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_draft_defers_cleanly_when_capability_disabled(client, auth_headers):
+    """If the relevant capability (vision, since an image is supplied) is disabled,
+    the route should defer via AIDisabledError -> 503, not attempt the AI call at all."""
+    with (
+        patch(
+            "app.services.style_service.require_internal_ai",
+            side_effect=AIDisabledError("Internal AI vision is disabled"),
+        ) as mock_guard,
+        patch(
+            "app.services.style_service.StyleService._call_model",
+            new=AsyncMock(),
+        ) as mock_call,
+    ):
+        r = await client.post(
+            "/api/v1/style-profile/draft",
+            headers=auth_headers,
+            json={"hints": {}, "image_b64": "Zm9v"},
+        )
+    assert r.status_code == 503
+    mock_guard.assert_called_once_with("vision")
+    mock_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_draft_capability_guard_uses_vision_for_image_and_text_otherwise(client, auth_headers):
+    """require_internal_ai must be called with 'vision' when an image is provided and
+    'text' otherwise, so a vision-disabled/text-enabled config can't slip through."""
+    with (
+        patch(
+            "app.services.style_service.require_internal_ai",
+        ) as mock_guard,
+        patch(
+            "app.services.style_service.StyleService._call_model",
+            new=AsyncMock(return_value={"color_season": "cool-winter", "kibbe_lean": "dramatic"}),
+        ),
+    ):
+        r = await client.post(
+            "/api/v1/style-profile/draft",
+            headers=auth_headers,
+            json={"hints": {}, "image_b64": "Zm9v"},
+        )
+        assert r.status_code == 200
+        mock_guard.assert_called_once_with("vision")
+
+        mock_guard.reset_mock()
+        r = await client.post(
+            "/api/v1/style-profile/draft",
+            headers=auth_headers,
+            json={"hints": {"undertone": "cool"}},
+        )
+        assert r.status_code == 200
+        mock_guard.assert_called_once_with("text")

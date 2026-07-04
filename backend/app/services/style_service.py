@@ -12,10 +12,11 @@ import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.user import User
 from app.schemas.preference import StyleProfile
-from app.services.ai_service import get_ai_service
+from app.services.ai_service import AIDisabledError, get_ai_service, require_internal_ai
 from app.services.body_analysis import analyze_measurements
 from app.services.preference_service import PreferenceService
 from app.style_rules import SEASON_PALETTE
@@ -34,6 +35,10 @@ DRAFT_SYSTEM_PROMPT = (
     'OUTPUT ONLY JSON: {"color_season": "<one of the 12-season names>", '
     '"kibbe_lean": "<dramatic|natural|romantic|classic|gamine>"}'
 )
+
+
+class StyleDraftError(Exception):
+    """Raised when the AI draft call ultimately fails (all endpoints unreachable/erroring)."""
 
 
 class StyleService:
@@ -59,10 +64,27 @@ class StyleService:
             "kibbe_confirmed": profile.kibbe_confirmed,
         }
 
+    async def update_confirmed(self, user: User, fields: dict) -> None:
+        """Persist user-confirmed style-profile fields (color_season, kibbe_lean, etc.)."""
+        preferences = await self.preference_service.get_or_create_preferences(user.id)
+
+        profile = StyleProfile(**(preferences.style_profile or {}))
+        for field in ("color_season", "kibbe_lean", "palette", "season_confirmed", "kibbe_confirmed"):
+            if field in fields:
+                setattr(profile, field, fields[field])
+
+        preferences.style_profile = profile.model_dump()
+        flag_modified(preferences, "style_profile")
+        await self.db.commit()
+
     async def draft(
         self, user: User, hints: dict | None = None, image_b64: str | None = None
     ) -> dict:
         """Ask the local model for an advisory (unsaved) colour-season + Kibbe lean guess."""
+        # Guard first so deferral is unconditional, before any context assembly. An
+        # image-bearing draft needs vision specifically; a text-only draft only needs text.
+        require_internal_ai("vision" if image_b64 else "text")
+
         analysis = analyze_measurements(user.body_measurements or {})
         context_lines = [f"{key}: {value}" for key, value in analysis.items() if value]
         for key, value in (hints or {}).items():
@@ -70,7 +92,15 @@ class StyleService:
                 context_lines.append(f"{key}: {value}")
         user_text = "\n".join(context_lines) or "No additional context provided."
 
-        raw = await self._call_model(user_text, image_b64)
+        try:
+            raw = await self._call_model(user_text, image_b64)
+        except (StyleDraftError, AIDisabledError):
+            raise
+        except Exception as e:
+            logger.error(f"AI style-draft failed: {e}")
+            raise StyleDraftError(
+                "AI service is not available. Please check your AI endpoint configuration in Settings."
+            ) from e
 
         color_season = raw.get("color_season") if raw else None
         kibbe_lean = raw.get("kibbe_lean") if raw else None

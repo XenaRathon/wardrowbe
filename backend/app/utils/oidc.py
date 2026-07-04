@@ -77,21 +77,6 @@ async def validate_oidc_id_token(
     try:
         jwk_client = _get_jwk_client(jwks_uri, ca_bundle=ca_bundle)
         signing_key = jwk_client.get_signing_key_from_jwt(id_token)
-        try:
-            unverified_header = jwt.get_unverified_header(id_token)
-            unverified_payload = jwt.decode(id_token, options={"verify_signature": False})
-            logger.error(
-                "[OIDC DEBUG] header=%s expected_issuer=%r expected_audience=%r token_iss=%r token_aud=%r token_sub=%r token_exp=%r",
-                unverified_header,
-                issuer_url,
-                audience,
-                unverified_payload.get("iss"),
-                unverified_payload.get("aud"),
-                unverified_payload.get("sub"),
-                unverified_payload.get("exp"),
-            )
-        except Exception as _debug_e:
-            logger.error("[OIDC DEBUG] failed to dump unverified token: %s", _debug_e)
         payload: dict[str, Any] = jwt.decode(
             id_token,
             signing_key.key,
@@ -101,7 +86,8 @@ async def validate_oidc_id_token(
             options={"verify_exp": True},
         )
     except jwt.PyJWTError as e:
-        logger.error("[OIDC DEBUG] PyJWT validation failed: %s: %s", type(e).__name__, e)
-        raise ValueError(f"Invalid OIDC token: {type(e).__name__}: {e}") from None
+        # Log the failure reason server-side (no token claims); raise a generic message.
+        logger.warning("OIDC token validation failed: %s: %s", type(e).__name__, e)
+        raise ValueError("Invalid OIDC token") from None
 
     return payload

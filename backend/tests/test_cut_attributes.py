@@ -1,5 +1,4 @@
-import pytest
-from app.services.ai_service import AIService, VALID_NECKLINE, VALID_RISE
+from app.services.ai_service import AIService
 
 
 def test_parse_populates_cut_attributes():

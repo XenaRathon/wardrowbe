@@ -36,7 +36,18 @@ def compute_vertical(height, inseam) -> str | None:
         base = "tall"
     else:
         base = "balanced"
-    return base
+
+    if inseam is None or inseam <= 0:
+        return base
+
+    leg_ratio = inseam / height
+    bands = ["petite", "balanced", "tall"]
+    idx = bands.index(base)
+    if leg_ratio >= 0.48:
+        idx = min(idx + 1, len(bands) - 1)
+    elif leg_ratio <= 0.44:
+        idx = max(idx - 1, 0)
+    return bands[idx]
 
 
 def compute_frame(wrist, height) -> str | None:

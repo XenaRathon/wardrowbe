@@ -275,6 +275,7 @@ class ItemService:
         occasion: str | None = None,
         notes: str | None = None,
         outfit_id: UUID | None = None,
+        worn_by_user_id: UUID | None = None,
     ) -> ItemHistory:
         # Create history entry
         history = ItemHistory(
@@ -283,6 +284,7 @@ class ItemService:
             worn_at=worn_at,
             occasion=occasion,
             notes=notes,
+            worn_by_user_id=worn_by_user_id,
         )
         self.db.add(history)
 

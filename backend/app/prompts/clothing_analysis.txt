@@ -7,6 +7,9 @@ shirt, t-shirt, top, pants, jeans, shorts, dress, jumpsuit, skirt, jacket, coat,
 
 SUBTYPE (optional): A more specific name within the type. Examples:
 - shirt → henley, button-down, oxford, flannel, hawaiian, camp-collar
+- t-shirt → crop, boxy, muscle, ringer
+- top → crop, tube, bandeau, halter, camisole, peplum, wrap
+- blouse → wrap, peplum, tie-neck, shell
 - pants → chinos, joggers, cargo, trousers, leggings, sweatpants
 - dress → sundress, slip-dress, maxi, midi, wrap, shirt-dress, a-line
 - jacket → denim-jacket, bomber, parka, windbreaker, trucker, anorak
@@ -40,5 +43,17 @@ spring, summer, fall, winter, all-season
 FIT (optional, pick one or null):
 slim, regular, relaxed, oversized, tailored, cropped
 
+NECKLINE (optional, pick one or null):
+crew, v-neck, scoop, boat, halter, off-shoulder, turtleneck, cowl, square, sweetheart, collared, strapless
+
+RISE (optional, bottoms only, pick one or null):
+high, mid, low
+
+SILHOUETTE (optional, pick one or null):
+a-line, bodycon, straight, wrap, fit-and-flare, shift, pencil, pleated, oversized, tailored, skinny, bootcut, wide-leg
+
+SLEEVE_LENGTH (optional, pick one or null):
+sleeveless, short, three-quarter, long
+
 Output this exact JSON structure (a single object, NOT wrapped in an array):
-{{"type":"TYPE","subtype":null,"primary_color":"COLOR","colors":["COLOR1"],"pattern":"PATTERN","material":null,"formality":"FORMALITY","style":["STYLE1"],"season":["SEASON1","SEASON2"],"fit":null}}
+{{"type":"TYPE","subtype":null,"primary_color":"COLOR","colors":["COLOR1"],"pattern":"PATTERN","material":null,"formality":"FORMALITY","style":["STYLE1"],"season":["SEASON1","SEASON2"],"fit":null,"neckline":null,"rise":null,"silhouette":null,"sleeve_length":null}}

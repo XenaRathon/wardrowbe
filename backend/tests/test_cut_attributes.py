@@ -23,3 +23,12 @@ def test_parse_rejects_out_of_vocab_attribute():
     tags = svc._parse_tags_from_response(resp)
     assert tags.neckline is None       # not in VALID_NECKLINE -> dropped
     assert tags.sleeve_length == "short"
+
+
+def test_prompt_declares_new_attributes():
+    from pathlib import Path
+    txt = Path("app/prompts/clothing_analysis.txt").read_text()
+    for key in ("neckline", "rise", "silhouette", "sleeve_length"):
+        assert key in txt, f"prompt missing {key}"
+    # a richer base-category subtype example is present
+    assert "crop" in txt and "halter" in txt

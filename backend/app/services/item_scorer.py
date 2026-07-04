@@ -6,6 +6,7 @@ from uuid import UUID
 from app.models.item import ClothingItem
 from app.models.preference import UserPreference
 from app.services.weather_service import WeatherData
+from app.style_rules import flattering_attrs
 
 OCCASION_FORMALITY = {
     "casual": ["very-casual", "casual", "smart-casual"],
@@ -86,6 +87,7 @@ class ScoredItem:
     preference_score: float = 1.0
     usage_score: float = 1.0
     pair_bonus: float = 0.0
+    style_fit_score: float = 1.0
 
 
 def _weather_score(
@@ -227,6 +229,39 @@ def _preference_score(
     return max(0.3, min(1.2, score))
 
 
+_STYLE_ATTRS = ("silhouette", "neckline", "rise")
+
+
+def _style_fit_score(item: ClothingItem, profile: dict | None) -> float:
+    """Down-rank (never exclude) items whose cut doesn't flatter the user's
+    body shape or whose color falls outside their palette. Neutral (1.0)
+    whenever there's no profile or the item carries no cut attributes to
+    judge, so untagged items and users without a profile are unaffected.
+    """
+    if not profile:
+        return 1.0
+    score = 1.0
+    rules = flattering_attrs(profile.get("body_shape"))
+    rec, avoid = rules.get("recommended", {}), rules.get("avoid", {})
+    for attr in _STYLE_ATTRS:
+        val = getattr(item, attr, None)
+        if not val:
+            continue
+        if val in rec.get(attr, set()):
+            score += 0.08
+        elif val in avoid.get(attr, set()):
+            score -= 0.12
+    palette = set(profile.get("palette") or [])
+    if palette:
+        item_colors = set(item.colors or ([item.primary_color] if item.primary_color else []))
+        if item_colors:
+            if item_colors & palette:
+                score += 0.08
+            else:
+                score -= 0.05
+    return max(0.7, min(1.2, score))
+
+
 def _usage_score(item: ClothingItem, median_wear: float) -> float:
     wear_count = item.wear_count or 0
     if median_wear <= 1:
@@ -297,6 +332,7 @@ def score_items(
 
     use_underused = preferences.prefer_underused_items if preferences else True
     median_wear = median([i.wear_count or 0 for i in items]) if use_underused and items else 0
+    profile_dict = preferences.style_profile if preferences else None
 
     scored = []
     for item in items:
@@ -306,8 +342,9 @@ def score_items(
         rs = _recency_score(item, user_today, avoid_days, recently_worn_dates)
         ps = _preference_score(item, preferences, learned_prefs)
         us = _usage_score(item, median_wear) if use_underused else 1.0
+        sfs = _style_fit_score(item, profile_dict)
 
-        total = ws * fs * ss * rs * ps * us
+        total = ws * fs * ss * rs * ps * us * sfs
 
         scored.append(
             ScoredItem(
@@ -319,6 +356,7 @@ def score_items(
                 recency_score=rs,
                 preference_score=ps,
                 usage_score=us,
+                style_fit_score=sfs,
             )
         )
 

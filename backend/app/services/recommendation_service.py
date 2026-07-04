@@ -31,6 +31,7 @@ from app.services.weather_service import (
     WeatherService,
     WeatherServiceError,
 )
+from app.style_rules import flattering_attrs, palette_for
 from app.utils.clothing import INTIMATE_TYPES, deduplicate_by_body_slot, outfit_is_complete
 from app.utils.prompts import load_prompt
 from app.utils.timezone import get_user_today
@@ -324,17 +325,63 @@ class RecommendationService:
                 lines.append(f"- Colors to avoid: {', '.join(preferences.color_avoid)}")
             if preferences.style_profile:
                 profile = preferences.style_profile
+                # Only these five keys are numeric sliders (0-100). Other style_profile
+                # fields are body-profile data (body_shape: str, palette: list,
+                # season_confirmed/kibbe_confirmed: bool) and must never be mistaken for
+                # sliders -- notably, Python bool is an int subclass, so an unrestricted
+                # `isinstance(v, (int, float))` check would misfile e.g. `season_confirmed:
+                # True` as a "less preferred style" (True < 30 is False but any bool > 60
+                # or < 30 comparison is still nonsensical here; restrict to known keys).
+                _SLIDER_KEYS = {"casual", "formal", "sporty", "minimalist", "bold"}
                 strong = sorted(
-                    [(k, v) for k, v in profile.items() if isinstance(v, (int, float)) and v > 60],
+                    [
+                        (k, v)
+                        for k, v in profile.items()
+                        if k in _SLIDER_KEYS and isinstance(v, (int, float)) and v > 60
+                    ],
                     key=lambda x: x[1],
                     reverse=True,
                 )
-                weak = [k for k, v in profile.items() if isinstance(v, (int, float)) and v < 30]
+                weak = [
+                    k
+                    for k, v in profile.items()
+                    if k in _SLIDER_KEYS and isinstance(v, (int, float)) and v < 30
+                ]
                 if strong:
                     desc = ", ".join(f"{k} ({v}%)" for k, v in strong)
                     lines.append(f"- Preferred styles: {desc}")
                 if weak:
                     lines.append(f"- Less preferred styles: {', '.join(weak)}")
+
+                body_shape = profile.get("body_shape")
+                if body_shape:
+                    rules = flattering_attrs(body_shape)
+                    rec_terms = sorted(
+                        {v for vals in rules.get("recommended", {}).values() for v in vals}
+                    )
+                    avoid_terms = sorted(
+                        {v for vals in rules.get("avoid", {}).values() for v in vals}
+                    )
+                    if rec_terms or avoid_terms:
+                        desc = f"- Body shape: {body_shape}"
+                        if rec_terms:
+                            desc += f" — favour {', '.join(rec_terms)}"
+                        if avoid_terms:
+                            desc += f", ease off {', '.join(avoid_terms)}"
+                        lines.append(desc)
+
+                color_season = profile.get("color_season")
+                palette = profile.get("palette") or (
+                    palette_for(color_season) if color_season else []
+                )
+                if color_season and palette:
+                    lines.append(
+                        f"- Colour season: {color_season}; palette favours {', '.join(palette)}"
+                    )
+                elif color_season:
+                    lines.append(f"- Colour season: {color_season}")
+                elif palette:
+                    lines.append(f"- Palette favours {', '.join(palette)}")
             if preferences.variety_level:
                 lines.append(f"- Variety preference: {preferences.variety_level}")
             if preferences.layering_preference and preferences.layering_preference != "moderate":

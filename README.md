@@ -207,6 +207,17 @@ Wardrowbe works with any OpenAI-compatible API. You need two types of models:
 - **Vision model**: Analyzes clothing images to extract colors, patterns, styles
 - **Text model**: Generates outfit recommendations and descriptions
 
+### Running without internal AI
+
+Internal AI is optional. Set `AI_INTERNAL_ENABLED=false` to run the backend with
+no internal AI provider at all — it boots and serves without `AI_BASE_URL`,
+`AI_API_KEY`, or model names configured, and defers tagging/suggestions/pairings
+to an external agent. You can also disable a single capability with
+`AI_VISION_ENABLED=false` (auto-tagging) or `AI_TEXT_ENABLED=false`
+(suggestions/pairings); unset switches inherit the master. The effective state is
+reported at `GET /api/v1/capabilities`. Defaults keep internal AI **on**, so
+existing deployments are unaffected.
+
 ### Using Ollama (Recommended for Self-Hosting)
 
 **Free, runs locally, no API key needed, works offline**
@@ -351,8 +362,14 @@ See the [k8s/](k8s/) directory for Kubernetes manifests including:
 | `BG_REMOVAL_MODEL` | rembg model name (default: `u2net`) | No |
 | `BG_REMOVAL_URL` | URL for HTTP bg removal provider | If http |
 | `BG_REMOVAL_API_KEY` | API key for HTTP bg removal provider | No |
+| `NEXT_PUBLIC_ENABLE_IP_LOCATION_FALLBACK` | Enable IP-based approximate location when browser geolocation is denied/unavailable. Off by default (sends the user's IP to a third party). Set to `true` to enable | No |
+| `NEXT_PUBLIC_NETWORK_LOCATION_URL` | Override the IP geolocation provider (default: `https://ipapi.co/json/`). Only used when the fallback above is enabled | No |
 
 See [.env.example](.env.example) for all options.
+
+### Location Detection (Privacy Note)
+
+The Settings page can fill in your coordinates from the browser's Geolocation API. If that is denied or unavailable, an optional fallback can approximate your location from your IP address via a third-party service (`ipapi.co` by default). This fallback is **disabled by default** because it sends the user's IP to an external provider; enable it with `NEXT_PUBLIC_ENABLE_IP_LOCATION_FALLBACK=true` and optionally point `NEXT_PUBLIC_NETWORK_LOCATION_URL` at a provider you trust. These are build-time frontend variables, so set them before building the frontend image. Geocoding a location name you type yourself still uses OpenStreetMap Nominatim regardless of this setting.
 
 ### Background Removal (Optional)
 

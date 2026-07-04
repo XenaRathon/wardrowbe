@@ -62,3 +62,10 @@ graphify*
 
 # F.A.S.C. local backups
 *.bak.*
+
+# upstream
+screenshots/
+.scope.md
+testing/
+.playwright-mcp
+*.review.yml

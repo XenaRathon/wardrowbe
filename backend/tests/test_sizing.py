@@ -25,3 +25,16 @@ def test_bra_size_systems_differ():
 def test_generic_size_bands():
     assert generic_size({"chest": 88, "waist": 74}) in {"S", "M"}
     assert generic_size({}) == "M"
+
+
+def test_bra_size_coerces_numeric_strings():
+    # body_measurements is a free-form dict; string values (e.g. "86") must
+    # not raise -- they should coerce and match the numeric-input result.
+    numeric = bra_size(underbust_cm=86, bust_cm=91, system="US")
+    stringy = bra_size(underbust_cm="86", bust_cm="91", system="US")
+    assert stringy == numeric
+    assert stringy["label"] == "34B"
+
+
+def test_bra_size_non_numeric_returns_none_not_raise():
+    assert bra_size(underbust_cm="abc", bust_cm=91) is None

@@ -113,10 +113,16 @@ class BuyAdvisorService:
         if (product_type or "").lower() in INTIMATE_TYPES:
             underbust = measurements.get("underbust")
             bust = measurements.get("bust")
-            if underbust is not None and bust is not None:
+            try:
                 result = bra_size(underbust, bust)
-                if result:
-                    return {"size": result["label"], "confidence": "high", "source": "bra-baseline"}
+            except Exception as e:
+                logger.warning(f"size_for_url bra_size failed, falling back to measurements: {e}")
+                result = None
+            if result:
+                return {"size": result["label"], "confidence": "high", "source": "bra-baseline"}
+            # Missing/invalid underbust or bust (e.g. non-numeric strings) --
+            # fall through to the measurement-based fallback below rather
+            # than returning a None-based result or raising.
 
         try:
             page = await self._fetch_page(product_url)

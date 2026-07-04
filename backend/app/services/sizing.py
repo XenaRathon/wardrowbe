@@ -23,8 +23,20 @@ _VALID_SYSTEMS = {"US", "UK", "EU"}
 def bra_size(underbust_cm, bust_cm, system: str = "US") -> dict | None:
     """Compute an ABTF-style bra band/cup from underbust + bust measurements (cm).
 
-    Returns None if either measurement is missing or non-positive.
+    Measurements may arrive as numeric strings (free-form input layer), so
+    both are coerced to float defensively. Returns None if either measurement
+    is missing, non-numeric, or non-positive -- never raises.
     """
+
+    def _f(value):
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    underbust_cm = _f(underbust_cm)
+    bust_cm = _f(bust_cm)
+
     if underbust_cm is None or bust_cm is None:
         return None
     if underbust_cm <= 0 or bust_cm <= 0:

@@ -10,12 +10,14 @@ import pytest_asyncio
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.item import ClothingItem
 from app.models.notification import Notification, NotificationSettings, NotificationStatus
 from app.models.preference import UserPreference
 from app.models.schedule import Schedule
 from app.models.user import User
 from app.workers.notifications import (
     check_scheduled_notifications,
+    check_wash_reminders,
     check_wear_nudges,
     process_scheduled_notification,
 )
@@ -106,6 +108,103 @@ async def nudge_ntfy_channel(db_session: AsyncSession, nudge_user: User) -> Noti
     return channel
 
 
+@pytest_asyncio.fixture
+async def future_nudge_user(db_session: AsyncSession) -> User:
+    """A user with wear_nudge_enabled but a wear_nudge_time still ahead of the
+    user's current local time today, so `check_wear_nudges` must treat them as
+    NOT due yet (mirrors nudge_user, inverted)."""
+    unique_id = uuid.uuid4()
+    user = User(
+        id=unique_id,
+        external_id=f"future-nudge-user-{unique_id}",
+        email=f"future-nudge-{unique_id}@example.com",
+        display_name="Future Nudge User",
+        timezone="UTC",
+        is_active=True,
+        onboarding_completed=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    pref = UserPreference(
+        user_id=user.id,
+        wear_nudge_enabled=True,
+        wear_nudge_time=_future_time(),
+    )
+    db_session.add(pref)
+    await db_session.commit()
+    return user
+
+
+@pytest_asyncio.fixture
+async def future_nudge_ntfy_channel(
+    db_session: AsyncSession, future_nudge_user: User
+) -> NotificationSettings:
+    channel = NotificationSettings(
+        user_id=future_nudge_user.id,
+        channel="ntfy",
+        enabled=True,
+        config={"server": "https://ntfy.sh", "topic": "future-nudge-topic"},
+    )
+    db_session.add(channel)
+    await db_session.commit()
+    await db_session.refresh(channel)
+    return channel
+
+
+@pytest_asyncio.fixture
+async def wash_user(db_session: AsyncSession) -> User:
+    """A plain active user used to exercise check_wash_reminders in isolation."""
+    unique_id = uuid.uuid4()
+    user = User(
+        id=unique_id,
+        external_id=f"wash-user-{unique_id}",
+        email=f"wash-{unique_id}@example.com",
+        display_name="Wash User",
+        timezone="UTC",
+        is_active=True,
+        onboarding_completed=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def wash_ntfy_channel(db_session: AsyncSession, wash_user: User) -> NotificationSettings:
+    channel = NotificationSettings(
+        user_id=wash_user.id,
+        channel="ntfy",
+        enabled=True,
+        config={"server": "https://ntfy.sh", "topic": "wash-topic"},
+    )
+    db_session.add(channel)
+    await db_session.commit()
+    await db_session.refresh(channel)
+    return channel
+
+
+@pytest_asyncio.fixture
+async def dirty_item(db_session: AsyncSession, wash_user: User) -> ClothingItem:
+    """A clothing item that is due for a wash: needs_wash=True and not archived
+    is exactly what `check_wash_reminders`'s query selects on."""
+    item = ClothingItem(
+        id=uuid.uuid4(),
+        user_id=wash_user.id,
+        image_path="/tmp/wardrobe_test/dirty-shirt.jpg",
+        type="shirt",
+        name="Blue Shirt",
+        needs_wash=True,
+        is_archived=False,
+    )
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+    return item
+
+
 class _FakeRedis:
     """Minimal in-memory stand-in for the arq redis pool's get/set, so the
     dedup-key round trip (check_wear_nudges reads back its own write) can be
@@ -124,6 +223,11 @@ class _FakeRedis:
 
 def _past_time(hours_ago: int = 1) -> time:
     target = datetime.now(UTC) - timedelta(hours=hours_ago)
+    return time(target.hour, target.minute)
+
+
+def _future_time(hours_ahead: int = 1) -> time:
+    target = datetime.now(UTC) + timedelta(hours=hours_ahead)
     return time(target.hour, target.minute)
 
 
@@ -519,6 +623,87 @@ class TestCheckWearNudges:
             )
         ).scalars().all()
         assert notifications == []
+
+    @pytest.mark.asyncio
+    async def test_skips_user_whose_nudge_time_has_not_passed_yet(
+        self,
+        db_session: AsyncSession,
+        future_nudge_user: User,
+        future_nudge_ntfy_channel: NotificationSettings,
+    ):
+        """future_nudge_user has wear_nudge_enabled and no outfit worn today -
+        the only thing keeping them from being nudged is that their
+        wear_nudge_time (set an hour ahead of "now") hasn't passed yet in
+        their local time. If the `now_local.time() < pref.wear_nudge_time`
+        gate in check_wear_nudges were ever inverted, this user would get
+        nudged immediately and this assertion would fail."""
+        ctx = {"redis": _FakeRedis()}
+        mock_send = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch("app.workers.notifications.NtfyProvider.send", mock_send),
+        ):
+            await check_wear_nudges(ctx)
+
+        # Shared users table across tests (see comment above) - scope to this
+        # test's own user via its Notification rows.
+        notifications = (
+            await db_session.execute(
+                select(Notification).where(
+                    Notification.user_id == future_nudge_user.id,
+                    Notification.payload["type"].astext == "wear_nudge",
+                )
+            )
+        ).scalars().all()
+
+        assert notifications == []
+
+
+# ── check_wash_reminders ──
+
+
+class TestCheckWashReminders:
+    @pytest.mark.asyncio
+    async def test_sends_wash_reminder_via_ntfy(
+        self,
+        db_session: AsyncSession,
+        wash_user: User,
+        wash_ntfy_channel: NotificationSettings,
+        dirty_item: ClothingItem,
+    ):
+        """dirty_item (needs_wash=True, not archived) plus an enabled ntfy
+        channel is exactly what makes wash_user due for a reminder. This
+        exercises the NtfyNotification(...) construction in
+        _check_wash_reminders_inner - the call previously omitted the
+        required `topic` kwarg, which raised inside the per-channel try/except
+        and was swallowed, silently downgrading the notification to
+        status=failed/channel="unknown" instead of actually sending. Asserting
+        status=sent and channel="ntfy" fails if that regresses."""
+        mock_send = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch("app.workers.notifications.NtfyProvider.send", mock_send),
+        ):
+            await check_wash_reminders({})
+
+        notifications = (
+            await db_session.execute(
+                select(Notification).where(
+                    Notification.user_id == wash_user.id,
+                    Notification.payload["type"].astext == "wash_reminder",
+                )
+            )
+        ).scalars().all()
+
+        assert len(notifications) == 1
+        notification = notifications[0]
+        assert notification.status == NotificationStatus.sent
+        assert notification.channel == "ntfy"
+        assert dirty_item.name in notification.payload["body"]
 
 
 # ── Worker registry ──

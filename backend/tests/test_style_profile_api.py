@@ -75,6 +75,21 @@ async def test_draft_defers_cleanly_when_capability_disabled(client, auth_header
 
 
 @pytest.mark.asyncio
+async def test_guidance_uses_rules(client, auth_headers, test_user, db_session):
+    test_user.body_measurements = {"bust": 88, "waist": 72, "hips": 104, "shoulders": 86}  # pear
+    await db_session.commit()
+    from unittest.mock import AsyncMock, patch
+    with patch("app.services.style_service.StyleService._call_model_text",
+               new=AsyncMock(return_value="You're a pear — emphasise the waist and shoulders.")):
+        r = await client.get("/api/v1/style-profile/guidance", headers=auth_headers)
+    assert r.status_code == 200
+    body = r.json()
+    # structured guidance is deterministic from the rule base, not the LLM
+    assert "a-line" in body["recommended"].get("silhouette", [])
+    assert isinstance(body["summary"], str) and body["summary"]
+
+
+@pytest.mark.asyncio
 async def test_draft_capability_guard_uses_vision_for_image_and_text_otherwise(client, auth_headers):
     """require_internal_ai must be called with 'vision' when an image is provided and
     'text' otherwise, so a vision-disabled/text-enabled config can't slip through."""

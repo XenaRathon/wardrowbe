@@ -19,7 +19,7 @@ from app.schemas.preference import StyleProfile
 from app.services.ai_service import AIDisabledError, get_ai_service, require_internal_ai
 from app.services.body_analysis import analyze_measurements
 from app.services.preference_service import PreferenceService
-from app.style_rules import SEASON_PALETTE
+from app.style_rules import SEASON_PALETTE, flattering_attrs, palette_for
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,14 @@ DRAFT_SYSTEM_PROMPT = (
     "context. "
     'OUTPUT ONLY JSON: {"color_season": "<one of the 12-season names>", '
     '"kibbe_lean": "<dramatic|natural|romantic|classic|gamine>"}'
+)
+
+GUIDANCE_SYSTEM_PROMPT = (
+    "You are a styling assistant. You will be given a user's body shape plus a "
+    "deterministic set of recommended and avoid cut/fit attributes and a colour "
+    "palette that have already been computed by a rule base. Write 2-3 "
+    "encouraging, concrete sentences of styling guidance grounded in EXACTLY "
+    "those facts -- do not invent new recommendations, items, or colours."
 )
 
 
@@ -111,6 +119,50 @@ class StyleService:
             kibbe_lean = None
 
         return {"color_season": color_season, "kibbe_lean": kibbe_lean}
+
+    async def guidance(self, user: User) -> dict:
+        """Assemble styling guidance: deterministic recommended/avoid/palette pulled
+        straight from `style_rules`, plus an LLM-phrased summary grounded in exactly
+        those facts. The LLM summary is best-effort -- if it fails or internal AI is
+        disabled, the deterministic structured guidance is still returned with an
+        empty summary rather than failing the whole request.
+        """
+        profile = await self.get_profile(user)
+        body_shape = profile["body_shape"]
+        color_season = profile["color_season"]
+
+        attrs = flattering_attrs(body_shape)
+        recommended = {key: sorted(values) for key, values in attrs.get("recommended", {}).items()}
+        avoid = {key: sorted(values) for key, values in attrs.get("avoid", {}).items()}
+        palette = palette_for(color_season)
+
+        prompt = (
+            f"Body shape: {body_shape or 'unknown'}\n"
+            f"Recommended: {recommended}\n"
+            f"Avoid: {avoid}\n"
+            f"Palette: {palette}\n\n"
+            "Write 2-3 encouraging, concrete sentences of styling guidance grounded "
+            "in exactly these facts."
+        )
+
+        try:
+            summary = await self._call_model_text(prompt)
+        except Exception as e:
+            logger.error(f"AI style-guidance summary failed, falling back to empty summary: {e}")
+            summary = ""
+
+        return {
+            "summary": summary or "",
+            "recommended": recommended,
+            "avoid": avoid,
+            "palette": palette,
+        }
+
+    async def _call_model_text(self, prompt: str) -> str:
+        """Single AI entry point for `guidance`'s summary -- isolated so tests can patch it directly."""
+        ai_service = get_ai_service()
+        text = await ai_service.generate_text(prompt, system_prompt=GUIDANCE_SYSTEM_PROMPT)
+        return text.strip() if text else ""
 
     async def _call_model(self, user_text: str, image_b64: str | None) -> dict:
         """Single AI entry point for `draft` -- isolated so tests can patch it directly."""

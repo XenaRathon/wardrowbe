@@ -48,6 +48,15 @@ async def update_style_profile(
     return await service.get_profile(current_user)
 
 
+@router.get("/guidance", response_model=dict)
+async def get_style_guidance(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    service = StyleService(db)
+    return await service.guidance(current_user)
+
+
 @router.post("/draft", response_model=dict)
 async def draft_style_profile(
     data: StyleDraftRequest,

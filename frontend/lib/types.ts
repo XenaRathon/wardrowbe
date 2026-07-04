@@ -373,3 +373,20 @@ export interface GeneratePairingsResponse {
   generated: number;
   pairings: Pairing[];
 }
+
+// Calendar types
+export interface OutfitBrief {
+  id: string;
+  occasion: string;
+  scheduled_for: string | null;
+  worn_at: string | null;
+  name: string | null;
+  item_ids: string[];
+}
+
+export interface DayRecord {
+  date: string;
+  primary: OutfitBrief | null;
+  extras: OutfitBrief[];
+  repeat_warnings?: string[];
+}

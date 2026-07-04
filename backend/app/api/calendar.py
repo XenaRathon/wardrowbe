@@ -63,7 +63,8 @@ async def wear_day(
     try:
         await svc.log_wear_outfit(current_user, d, body.outfit_id, wearer, body.occasion)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        status_code = 400 if "worn_by_user_id" in str(e) else 404
+        raise HTTPException(status_code, str(e))
     return await svc.get_day(current_user, d)
 
 

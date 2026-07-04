@@ -85,3 +85,40 @@ async def test_remove_wear_reverses_cascade(db_session):
         select(func.count()).select_from(ItemHistory).where(ItemHistory.item_id == item.id)
     )).scalar()
     assert n == 0
+
+
+@pytest.mark.asyncio
+async def test_remove_wear_reverses_wash_cascade(db_session):
+    """remove_wear must undo wears_since_wash/needs_wash/last_worn_at, not just wear_count."""
+    u = await _user(db_session)
+    d = date(2026, 7, 4)
+    # wash_interval=1 so a single wear immediately flips needs_wash True.
+    item = ClothingItem(id=uuid4(), user_id=u.id, image_path="z.jpg", type="pants",
+                        status=ItemStatus.ready, wear_count=0, wash_interval=1)
+    o = Outfit(id=uuid4(), user_id=u.id, occasion="casual", status=OutfitStatus.pending,
+               source=OutfitSource.manual, scheduled_for=d)
+    db_session.add_all([item, o]); await db_session.commit()
+    db_session.add(OutfitItem(outfit_id=o.id, item_id=item.id, position=0)); await db_session.commit()
+
+    await CalendarService(db_session).confirm(u, d)
+    await db_session.refresh(item)
+    assert item.wears_since_wash == 1
+    assert item.needs_wash is True
+    assert item.last_worn_at == d
+
+    await CalendarService(db_session).remove_wear(u, d, o.id)
+    await db_session.refresh(item)
+    assert item.wears_since_wash == 0
+    assert item.needs_wash is False
+    assert item.last_worn_at is None
+
+
+@pytest.mark.asyncio
+async def test_log_wear_outfit_rejects_non_family_wearer(db_session):
+    u = await _user(db_session)
+    stranger = await _user(db_session)
+    d = date(2026, 7, 4)
+    o = await _outfit(db_session, u, scheduled_for=d)
+
+    with pytest.raises(ValueError, match="family member"):
+        await CalendarService(db_session).log_wear_outfit(u, d, o.id, stranger.id)

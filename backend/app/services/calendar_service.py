@@ -1,13 +1,15 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.item import ItemHistory
 from app.models.outfit import Outfit, OutfitItem
 from app.models.user import User
+from app.schemas.item import DEFAULT_WASH_INTERVALS
+from app.services.family_service import FamilyService
 from app.services.item_service import ItemService
 
 
@@ -87,9 +89,15 @@ class CalendarService:
         worn_by_user_id: UUID,
         occasion: str | None = None,
     ) -> Outfit:
+        await self._validate_wearer(user, worn_by_user_id)
         outfit = await self._owned_outfit(user, outfit_id)
         await self._log_outfit(user, outfit, d, worn_by_user_id=worn_by_user_id, occasion=occasion)
         return outfit
+
+    async def _validate_wearer(self, user: User, worn_by_user_id: UUID) -> None:
+        member_ids = await FamilyService(self.db).get_member_ids(user)
+        if worn_by_user_id not in member_ids:
+            raise ValueError("worn_by_user_id must be a family member")
 
     async def remove_wear(self, user: User, d: date, outfit_id: UUID) -> None:
         outfit = await self._owned_outfit(user, outfit_id)
@@ -98,10 +106,26 @@ class CalendarService:
             .where(ItemHistory.outfit_id == outfit.id, ItemHistory.worn_at == d)
             .options(selectinload(ItemHistory.item))
         )).scalars().all()
+        items = {h.item_id: h.item for h in hist if h.item is not None}
         for h in hist:
-            if h.item is not None and h.item.wear_count > 0:
-                h.item.wear_count -= 1
             await self.db.delete(h)
+        await self.db.flush()
+
+        for item in items.values():
+            if item.wear_count > 0:
+                item.wear_count -= 1
+            if item.wears_since_wash > 0:
+                item.wears_since_wash -= 1
+            effective_interval = (
+                item.wash_interval
+                if item.wash_interval is not None
+                else DEFAULT_WASH_INTERVALS.get(item.type, 3)
+            )
+            item.needs_wash = item.wears_since_wash >= effective_interval
+            item.last_worn_at = (await self.db.execute(
+                select(func.max(ItemHistory.worn_at)).where(ItemHistory.item_id == item.id)
+            )).scalar()
+
         outfit.worn_at = None
         await self.db.flush()
 

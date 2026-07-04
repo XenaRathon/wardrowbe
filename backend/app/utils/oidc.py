@@ -50,10 +50,14 @@ async def validate_oidc_id_token(
             disc_resp.raise_for_status()
             discovery = disc_resp.json()
             jwks_uri = discovery["jwks_uri"]
-            # Validate the token's iss claim against the provider's canonical issuer
-            # (the discovery metadata) rather than the configured env var, so a
-            # trailing slash on OIDC_ISSUER_URL cannot cause a false issuer mismatch.
-            expected_issuer = discovery.get("issuer", issuer_url.rstrip("/"))
+            # Use the discovery doc ONLY for jwks_uri (signature keys). Validate the
+            # token's iss claim against the configured public issuer_url, NOT the
+            # discovery metadata's "issuer": when OIDC_DISCOVERY_BASE_URL points at a
+            # LAN address (to bypass Cloudflare's UA 403 on the public JWKS endpoint),
+            # Authentik host-echoes that LAN host into the discovery "issuer" field, so
+            # trusting it guarantees an issuer mismatch against the public token iss.
+            # issuer_url is the slashed public URL Authentik actually stamps on tokens.
+            expected_issuer = issuer_url
     except httpx.HTTPError as e:
         logger.error("Failed to fetch OIDC discovery from %s: %s", discovery_base, e)
         raise ValueError("Failed to contact OIDC provider") from None

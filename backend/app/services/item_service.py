@@ -157,20 +157,39 @@ class ItemService:
         )
         return result.scalar_one_or_none()
 
+    async def _validate_owner_in_family(self, requester_id: UUID, owner_id: UUID) -> None:
+        """Raise ValueError unless owner_id belongs to requester_id's family
+        (or is requester_id itself)."""
+        from app.models.user import User
+        from app.services.family_service import FamilyService
+
+        requester = await self.db.get(User, requester_id)
+        if requester is None:
+            raise ValueError("Owner must be a family member")
+
+        member_ids = await FamilyService(self.db).get_member_ids(requester)
+        if owner_id not in member_ids:
+            raise ValueError("Owner must be a family member")
+
     async def create(
         self,
         user_id: UUID,
         item_data: ItemCreate,
         image_paths: dict[str, str],
+        owner_user_id: UUID | None = None,
     ) -> ClothingItem:
         # Build tags dict
         tags = {}
         if item_data.tags:
             tags = item_data.tags.model_dump(exclude_none=True)
 
+        resolved_owner_id = owner_user_id if owner_user_id is not None else user_id
+        if owner_user_id is not None and owner_user_id != user_id:
+            await self._validate_owner_in_family(user_id, owner_user_id)
+
         # Create item
         item = ClothingItem(
-            user_id=user_id,
+            user_id=resolved_owner_id,
             image_path=image_paths["image_path"],
             thumbnail_path=image_paths.get("thumbnail_path"),
             medium_path=image_paths.get("medium_path"),
@@ -196,6 +215,12 @@ class ItemService:
 
     async def update(self, item: ClothingItem, item_data: ItemUpdate) -> ClothingItem:
         update_data = item_data.model_dump(exclude_unset=True)
+
+        new_owner_id = update_data.get("user_id")
+        if new_owner_id is not None and new_owner_id != item.user_id:
+            # item.user_id is still the current owner (the requester, per get_by_id's
+            # ownership filter) at this point, before the field loop below reassigns it.
+            await self._validate_owner_in_family(item.user_id, new_owner_id)
 
         if "tags" in update_data and update_data["tags"]:
             tags = update_data["tags"]

@@ -105,6 +105,7 @@ async def create_item(
     colors: str | None = Form(None),
     primary_color: str | None = Form(None),
     favorite: bool = Form(False),
+    owner_user_id: UUID | None = Form(None),
 ) -> ItemResponse:
     # Validate and process image
     image_service = ImageService()
@@ -160,13 +161,21 @@ async def create_item(
         colors=color_list,
         primary_color=primary_color,
         favorite=favorite,
+        owner_user_id=owner_user_id,
     )
 
-    item = await item_service.create(
-        user_id=current_user.id,
-        item_data=item_data,
-        image_paths=image_paths,
-    )
+    try:
+        item = await item_service.create(
+            user_id=current_user.id,
+            item_data=item_data,
+            image_paths=image_paths,
+            owner_user_id=item_data.owner_user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from None
 
     # Queue AI tagging job
     try:
@@ -520,7 +529,13 @@ async def update_item(
             detail="Item not found",
         )
 
-    item = await item_service.update(item, item_data)
+    try:
+        item = await item_service.update(item, item_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from None
     return ItemResponse.model_validate(item)
 
 

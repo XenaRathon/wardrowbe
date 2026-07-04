@@ -126,6 +126,36 @@ async def test_log_wear_outfit_rejects_non_family_wearer(db_session):
 
 
 @pytest.mark.asyncio
+async def test_auto_confirm_due_confirms_planned(db_session):
+    from datetime import date
+    from uuid import uuid4
+
+    from app.models.item import ClothingItem, ItemStatus, ItemHistory
+    from app.models.outfit import Outfit, OutfitItem, OutfitStatus, OutfitSource
+    from app.services.calendar_service import CalendarService
+    from sqlalchemy import select, func
+
+    u = await _user(db_session)
+    d = date(2026, 7, 4)
+    item = ClothingItem(id=uuid4(), user_id=u.id, image_path="x.jpg", type="shirt",
+                        status=ItemStatus.ready, wear_count=0)
+    o = Outfit(id=uuid4(), user_id=u.id, occasion="casual", status=OutfitStatus.pending,
+               source=OutfitSource.manual, scheduled_for=d)
+    db_session.add_all([item, o]); await db_session.commit()
+    db_session.add(OutfitItem(outfit_id=o.id, item_id=item.id, position=0)); await db_session.commit()
+
+    n = await CalendarService(db_session).auto_confirm_due(u, d)
+    await db_session.refresh(item); await db_session.refresh(o)
+    assert n == 1
+    assert o.worn_at == d
+    assert item.wear_count == 1
+    # idempotent
+    assert await CalendarService(db_session).auto_confirm_due(u, d) == 0
+    await db_session.refresh(item)
+    assert item.wear_count == 1
+
+
+@pytest.mark.asyncio
 async def test_recently_worn_flags_within_window(db_session):
     from datetime import timedelta
 

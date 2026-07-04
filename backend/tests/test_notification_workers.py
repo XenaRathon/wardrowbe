@@ -16,6 +16,7 @@ from app.models.preference import UserPreference
 from app.models.schedule import Schedule
 from app.models.user import User
 from app.workers.notifications import (
+    check_auto_confirm,
     check_scheduled_notifications,
     check_wash_reminders,
     check_wear_nudges,
@@ -625,6 +626,41 @@ class TestCheckWearNudges:
         assert notifications == []
 
     @pytest.mark.asyncio
+    async def test_skips_user_with_planned_outfit_today(
+        self, db_session: AsyncSession, nudge_user: User, nudge_ntfy_channel: NotificationSettings
+    ):
+        """A user with a planned-but-unconfirmed outfit for today is never
+        nudged - their day gets silently auto-confirmed by check_auto_confirm
+        instead, so the two crons don't race."""
+        from app.models.outfit import Outfit
+
+        outfit = Outfit(
+            id=uuid.uuid4(),
+            user_id=nudge_user.id,
+            occasion="casual",
+            scheduled_for=datetime.now(UTC).date(),
+        )
+        db_session.add(outfit)
+        await db_session.commit()
+
+        ctx = {"redis": _FakeRedis()}
+        mock_send = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch("app.workers.notifications.NtfyProvider.send", mock_send),
+        ):
+            await check_wear_nudges(ctx)
+
+        notifications = (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == nudge_user.id)
+            )
+        ).scalars().all()
+        assert notifications == []
+
+    @pytest.mark.asyncio
     async def test_skips_user_whose_nudge_time_has_not_passed_yet(
         self,
         db_session: AsyncSession,
@@ -659,6 +695,92 @@ class TestCheckWearNudges:
         ).scalars().all()
 
         assert notifications == []
+
+
+# ── check_auto_confirm ──
+
+
+class TestCheckAutoConfirm:
+    @pytest.mark.asyncio
+    async def test_confirms_planned_outfit_for_today(
+        self, db_session: AsyncSession, nudge_user: User
+    ):
+        """nudge_user's wear_nudge_time is comfortably in the past, so they're
+        past their local end-of-day gate; a planned-but-unconfirmed outfit for
+        today should get silently confirmed (worn_at set, item wear logged)."""
+        from app.models.item import ItemStatus
+        from app.models.outfit import Outfit, OutfitItem
+
+        item = ClothingItem(
+            id=uuid.uuid4(),
+            user_id=nudge_user.id,
+            image_path="/tmp/wardrobe_test/auto-confirm-shirt.jpg",
+            type="shirt",
+            status=ItemStatus.ready,
+            wear_count=0,
+        )
+        outfit = Outfit(
+            id=uuid.uuid4(),
+            user_id=nudge_user.id,
+            occasion="casual",
+            scheduled_for=datetime.now(UTC).date(),
+        )
+        db_session.add_all([item, outfit])
+        await db_session.commit()
+        db_session.add(OutfitItem(outfit_id=outfit.id, item_id=item.id, position=0))
+        await db_session.commit()
+
+        ctx = {}
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+        ):
+            await check_auto_confirm(ctx)
+
+        await db_session.refresh(outfit)
+        await db_session.refresh(item)
+        assert outfit.worn_at == datetime.now(UTC).date()
+        assert item.wear_count == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_user_whose_nudge_time_has_not_passed_yet(
+        self,
+        db_session: AsyncSession,
+        future_nudge_user: User,
+    ):
+        from app.models.item import ItemStatus
+        from app.models.outfit import Outfit, OutfitItem
+
+        item = ClothingItem(
+            id=uuid.uuid4(),
+            user_id=future_nudge_user.id,
+            image_path="/tmp/wardrobe_test/future-auto-confirm-shirt.jpg",
+            type="shirt",
+            status=ItemStatus.ready,
+            wear_count=0,
+        )
+        outfit = Outfit(
+            id=uuid.uuid4(),
+            user_id=future_nudge_user.id,
+            occasion="casual",
+            scheduled_for=datetime.now(UTC).date(),
+        )
+        db_session.add_all([item, outfit])
+        await db_session.commit()
+        db_session.add(OutfitItem(outfit_id=outfit.id, item_id=item.id, position=0))
+        await db_session.commit()
+
+        ctx = {}
+
+        with (
+            patch("app.workers.notifications.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+        ):
+            await check_auto_confirm(ctx)
+
+        await db_session.refresh(outfit)
+        assert outfit.worn_at is None
 
 
 # ── check_wash_reminders ──
@@ -724,6 +846,7 @@ class TestWorkerFunctionRegistry:
             "check_scheduled_notifications",
             "check_wash_reminders",
             "check_wear_nudges",
+            "check_auto_confirm",
             "update_learning_profiles",
         }
         missing = required - func_names

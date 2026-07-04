@@ -23,6 +23,7 @@ from app.services.notification_providers import (
     NtfyProvider,
     build_notification_email,
 )
+from app.services.calendar_service import CalendarService
 from app.services.notification_service import DeliveryStatus, NotificationDispatcher
 from app.services.recommendation_service import RecommendationService
 from app.services.weather_service import WeatherService
@@ -547,6 +548,17 @@ async def check_wear_nudges(ctx: dict):
                 if worn_result.scalar_one_or_none() is not None:
                     continue
 
+                # Planned days are silently auto-confirmed by check_auto_confirm,
+                # never nudged - so ordering between the two cron jobs doesn't
+                # matter.
+                planned_result = await db.execute(
+                    select(Outfit.id)
+                    .where(Outfit.user_id == user.id, Outfit.scheduled_for == today)
+                    .limit(1)
+                )
+                if planned_result.scalar_one_or_none() is not None:
+                    continue
+
                 channels_result = await db.execute(
                     select(NotificationSettings).where(
                         and_(
@@ -640,6 +652,58 @@ async def check_wear_nudges(ctx: dict):
 
     except Exception as e:
         logger.exception("Error in check_wear_nudges")
+        return {"error": str(e)}
+    finally:
+        await db.close()
+
+
+async def check_auto_confirm(ctx: dict):
+    """For every user with wear_nudge_enabled whose local time has passed
+    their wear_nudge_time today, silently confirm any outfit still planned
+    (scheduled_for == today, worn_at IS NULL) - the end-of-day loop closes on
+    its own for planned days, and only truly unplanned days fall through to
+    check_wear_nudges.
+    """
+    logger.info("Checking for planned outfits to auto-confirm...")
+
+    db = get_db_session(ctx)
+    try:
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.preferences))
+            .where(User.is_active.is_(True))
+        )
+        users = list(result.scalars().all())
+
+        calendar_service = CalendarService(db)
+        confirmed = 0
+
+        for user in users:
+            pref = user.preferences
+            if pref is None or not pref.wear_nudge_enabled:
+                continue
+
+            try:
+                now_local = get_user_now(user)
+                if now_local.time() < pref.wear_nudge_time:
+                    continue
+
+                today = now_local.date()
+                count = await calendar_service.auto_confirm_due(user, today)
+                if count:
+                    await db.commit()
+                    confirmed += count
+
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"Failed to auto-confirm outfits for user {user.id}: {e}")
+                continue
+
+        logger.info(f"Auto-confirmed {confirmed} planned outfits")
+        return {"confirmed": confirmed}
+
+    except Exception as e:
+        logger.exception("Error in check_auto_confirm")
         return {"error": str(e)}
     finally:
         await db.close()

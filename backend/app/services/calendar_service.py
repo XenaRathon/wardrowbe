@@ -185,6 +185,14 @@ class CalendarService:
         outfit.worn_at = d
         await self.db.flush()
 
+    async def auto_confirm_due(self, user: User, on_date: date) -> int:
+        count = 0
+        for o in await self._day_outfits(user, on_date):
+            if o.scheduled_for == on_date and o.worn_at is None:
+                await self._log_outfit(user, o, on_date, worn_by_user_id=user.id)
+                count += 1
+        return count
+
     async def _owned_outfit(self, user: User, outfit_id: UUID) -> Outfit:
         o = (await self.db.execute(
             select(Outfit)

@@ -157,6 +157,7 @@ class ItemFilter(BaseModel):
     search: str | None = None
     sort_by: str | None = None
     sort_order: str = "desc"
+    owner_scope: str = "mine"
 
 
 class LogWearRequest(BaseModel):

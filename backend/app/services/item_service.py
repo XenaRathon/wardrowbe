@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import attributes, selectinload
 
 from app.models.item import ClothingItem, ItemHistory, ItemStatus, WashHistory
+from app.models.user import User
 from app.schemas.item import DEFAULT_WASH_INTERVALS, ItemCreate, ItemFilter, ItemUpdate
+from app.utils.visibility import usable_items_filter
 
 
 class ItemService:
@@ -39,15 +41,22 @@ class ItemService:
 
     async def get_list(
         self,
-        user_id: UUID,
+        user: User,
         filters: ItemFilter,
         page: int = 1,
         page_size: int = 20,
+        member_ids: list[UUID] | None = None,
     ) -> tuple[list[ClothingItem], int]:
-        # Base query
+        # Base predicate: "mine" (default) is current-owner-only behaviour;
+        # "family"/"all" is the shared household pool (respects is_private).
+        if filters.owner_scope in ("family", "all"):
+            base = usable_items_filter(user, member_ids or [user.id])
+        else:
+            base = ClothingItem.user_id == user.id
+
         query = (
             select(ClothingItem)
-            .where(ClothingItem.user_id == user_id)
+            .where(base)
             .options(selectinload(ClothingItem.additional_images))
         )
 

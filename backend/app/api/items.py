@@ -32,6 +32,7 @@ from app.schemas.item import (
     ReorderImagesRequest,
     WashHistoryResponse,
 )
+from app.services.family_service import FamilyService
 from app.services.image_service import ImageService
 from app.services.item_service import ItemService
 from app.utils.auth import get_current_user
@@ -59,6 +60,7 @@ async def list_items(
     search: str | None = None,
     sort_by: str | None = None,
     sort_order: str = "desc",
+    owner_scope: str = Query("mine", pattern="^(mine|family|all)$"),
 ) -> ItemListResponse:
     color_list = colors.split(",") if colors else None
 
@@ -73,14 +75,20 @@ async def list_items(
         search=search,
         sort_by=sort_by,
         sort_order=sort_order,
+        owner_scope=owner_scope,
     )
+
+    member_ids = None
+    if owner_scope != "mine":
+        member_ids = await FamilyService(db).get_member_ids(current_user)
 
     item_service = ItemService(db)
     items, total = await item_service.get_list(
-        user_id=current_user.id,
+        user=current_user,
         filters=filters,
         page=page,
         page_size=page_size,
+        member_ids=member_ids,
     )
 
     return ItemListResponse(

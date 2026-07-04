@@ -4,6 +4,7 @@ import pytest
 
 from app.api.auth import create_access_token
 from app.models.family import Family
+from app.models.item import ClothingItem, ItemStatus
 from app.models.user import User
 from app.schemas.item import ItemCreate
 from app.services.item_service import ItemService
@@ -122,3 +123,35 @@ class TestAssignOwnerAndPrivacyOnUpdate:
         )
 
         assert r.status_code == 400
+
+
+class TestOwnerScopeFilter:
+    @pytest.mark.asyncio
+    async def test_list_items_owner_scope_family_includes_partner_shared(self, db_session, client):
+        # NOTE: deviates from the task brief's literal snippet, which builds
+        # Family(created_by=uuid4()) with a random, non-existent user id.
+        # families.created_by has a real (immediate, non-deferred) FK to users.id
+        # (see fk_families_created_by in migrations/versions/001_initial_schema.py),
+        # so that insert would violate the FK. Using the existing _family() helper
+        # instead, which creates the owning user first, exactly as the other
+        # tests in this file already do.
+        me = await _user(db_session)
+        fam = await _family(db_session, me)
+        her = await _user(db_session, fam.id)
+        shared = ClothingItem(
+            id=uuid4(),
+            user_id=her.id,
+            image_path="x.jpg",
+            type="jacket",
+            status=ItemStatus.ready,
+            is_private=False,
+        )
+        db_session.add(shared)
+        await db_session.commit()
+        headers = {"Authorization": f"Bearer {create_access_token(me.external_id)}"}
+        mine = await client.get("/api/v1/items?owner_scope=mine", headers=headers)
+        fam_r = await client.get("/api/v1/items?owner_scope=family", headers=headers)
+        mine_ids = [i["id"] for i in mine.json()["items"]]
+        fam_ids = [i["id"] for i in fam_r.json()["items"]]
+        assert str(shared.id) not in mine_ids
+        assert str(shared.id) in fam_ids

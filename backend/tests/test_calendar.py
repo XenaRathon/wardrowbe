@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from app.models.item import ClothingItem, ItemHistory, ItemStatus
 from app.models.outfit import Outfit, OutfitItem, OutfitStatus, OutfitSource
+from app.models.preference import UserPreference
 from app.models.user import User
 from app.services.calendar_service import CalendarService
 
@@ -122,3 +123,23 @@ async def test_log_wear_outfit_rejects_non_family_wearer(db_session):
 
     with pytest.raises(ValueError, match="family member"):
         await CalendarService(db_session).log_wear_outfit(u, d, o.id, stranger.id)
+
+
+@pytest.mark.asyncio
+async def test_recently_worn_flags_within_window(db_session):
+    from datetime import timedelta
+
+    u = await _user(db_session)
+    db_session.add(UserPreference(user_id=u.id, avoid_repeat_days=7)); await db_session.commit()
+    shirt = ClothingItem(id=uuid4(), user_id=u.id, image_path="x", type="shirt", status=ItemStatus.ready)
+    shoes = ClothingItem(id=uuid4(), user_id=u.id, image_path="y", type="shoes", status=ItemStatus.ready)
+    db_session.add_all([shirt, shoes]); await db_session.commit()
+    d = date(2026, 7, 10)
+    db_session.add_all([
+        ItemHistory(item_id=shirt.id, worn_at=d - timedelta(days=2)),
+        ItemHistory(item_id=shoes.id, worn_at=d - timedelta(days=1)),
+    ]); await db_session.commit()
+
+    flagged = await CalendarService(db_session).recently_worn(u, [shirt.id, shoes.id], d)
+    assert shirt.id in flagged
+    assert shoes.id not in flagged   # shoes excluded

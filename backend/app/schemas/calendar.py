@@ -17,6 +17,7 @@ class DayRecordOut(BaseModel):
     date: date
     primary: OutfitBrief | None = None
     extras: list[OutfitBrief] = []
+    repeat_warnings: list[UUID] = []
 
 
 class PlanRequest(BaseModel):

@@ -1,12 +1,13 @@
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.item import ItemHistory
+from app.models.item import ClothingItem, ItemHistory
 from app.models.outfit import Outfit, OutfitItem
+from app.models.preference import UserPreference
 from app.models.user import User
 from app.schemas.item import DEFAULT_WASH_INTERVALS
 from app.services.family_service import FamilyService
@@ -20,6 +21,9 @@ def _brief(o: Outfit) -> dict:
 
 
 class CalendarService:
+    _REPEAT_EXCLUDE = {"shoes", "sneakers", "boots", "sandals", "jewelry", "watch",
+                       "belt", "bag", "sunglasses", "hat", "scarf", "tie", "gloves"}
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -51,18 +55,42 @@ class CalendarService:
             worn = [o for o in todays if o.worn_at == d]
             primary = (confirmed or planned or worn or [None])[0]
             extras = [o for o in worn if primary is None or o.id != primary.id]
+            repeat_warnings = (
+                await self.recently_worn(user, [oi.item_id for oi in primary.items], d)
+                if primary else []
+            )
             records.append({
                 "date": d,
                 "primary": _brief(primary) if primary else None,
                 "extras": [_brief(o) for o in extras],
+                "repeat_warnings": repeat_warnings,
             })
         return records
+
+    async def recently_worn(self, user: User, item_ids: list[UUID], on_date: date) -> list[UUID]:
+        if not item_ids:
+            return []
+        pref = (await self.db.execute(
+            select(UserPreference).where(UserPreference.user_id == user.id)
+        )).scalar_one_or_none()
+        window = pref.avoid_repeat_days if pref else 7
+        since = on_date - timedelta(days=window)
+        rows = (await self.db.execute(
+            select(ItemHistory.item_id, ClothingItem.type)
+            .join(ClothingItem, ClothingItem.id == ItemHistory.item_id)
+            .where(
+                ItemHistory.item_id.in_(item_ids),
+                ItemHistory.worn_at >= since,
+                ItemHistory.worn_at < on_date,
+            )
+        )).all()
+        return [iid for iid, itype in rows if (itype or "").lower() not in self._REPEAT_EXCLUDE]
 
     async def get_day(self, user: User, d: date) -> dict:
         """Like get_range for a single date, but always returns a record even
         when the day has no outfits (e.g. after remove_wear clears the last one)."""
         records = await self.get_range(user, d, d)
-        return records[0] if records else {"date": d, "primary": None, "extras": []}
+        return records[0] if records else {"date": d, "primary": None, "extras": [], "repeat_warnings": []}
 
     async def set_plan(self, user: User, d: date, outfit_id: UUID) -> Outfit:
         outfit = await self._owned_outfit(user, outfit_id)

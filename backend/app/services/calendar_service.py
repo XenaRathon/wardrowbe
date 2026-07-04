@@ -1,11 +1,14 @@
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.outfit import Outfit
+from app.models.item import ItemHistory
+from app.models.outfit import Outfit, OutfitItem
 from app.models.user import User
+from app.services.item_service import ItemService
 
 
 def _brief(o: Outfit) -> dict:
@@ -52,3 +55,97 @@ class CalendarService:
                 "extras": [_brief(o) for o in extras],
             })
         return records
+
+    async def get_day(self, user: User, d: date) -> dict:
+        """Like get_range for a single date, but always returns a record even
+        when the day has no outfits (e.g. after remove_wear clears the last one)."""
+        records = await self.get_range(user, d, d)
+        return records[0] if records else {"date": d, "primary": None, "extras": []}
+
+    async def set_plan(self, user: User, d: date, outfit_id: UUID) -> Outfit:
+        outfit = await self._owned_outfit(user, outfit_id)
+        # Clear any other plan for the day so only one outfit is scheduled per date.
+        for o in await self._day_outfits(user, d):
+            if o.id != outfit.id and o.scheduled_for == d:
+                o.scheduled_for = None
+        outfit.scheduled_for = d
+        await self.db.flush()
+        return outfit
+
+    async def confirm(self, user: User, d: date) -> dict:
+        planned = next((o for o in await self._day_outfits(user, d) if o.scheduled_for == d), None)
+        if planned is None:
+            raise ValueError("No planned outfit for this date")
+        await self._log_outfit(user, planned, d, worn_by_user_id=user.id)
+        return await self.get_day(user, d)
+
+    async def log_wear_outfit(
+        self,
+        user: User,
+        d: date,
+        outfit_id: UUID,
+        worn_by_user_id: UUID,
+        occasion: str | None = None,
+    ) -> Outfit:
+        outfit = await self._owned_outfit(user, outfit_id)
+        await self._log_outfit(user, outfit, d, worn_by_user_id=worn_by_user_id, occasion=occasion)
+        return outfit
+
+    async def remove_wear(self, user: User, d: date, outfit_id: UUID) -> None:
+        outfit = await self._owned_outfit(user, outfit_id)
+        hist = (await self.db.execute(
+            select(ItemHistory)
+            .where(ItemHistory.outfit_id == outfit.id, ItemHistory.worn_at == d)
+            .options(selectinload(ItemHistory.item))
+        )).scalars().all()
+        for h in hist:
+            if h.item is not None and h.item.wear_count > 0:
+                h.item.wear_count -= 1
+            await self.db.delete(h)
+        outfit.worn_at = None
+        await self.db.flush()
+
+    async def _log_outfit(
+        self,
+        user: User,
+        outfit: Outfit,
+        d: date,
+        *,
+        worn_by_user_id: UUID,
+        occasion: str | None = None,
+    ) -> None:
+        existing = (await self.db.execute(
+            select(ItemHistory.item_id)
+            .where(ItemHistory.outfit_id == outfit.id, ItemHistory.worn_at == d)
+        )).scalars().all()
+        already = set(existing)
+        svc = ItemService(self.db)
+        for oi in outfit.items:
+            if oi.item_id in already:
+                continue
+            await svc.log_wear(
+                oi.item,
+                worn_at=d,
+                outfit_id=outfit.id,
+                worn_by_user_id=worn_by_user_id,
+                occasion=occasion or outfit.occasion,
+            )
+        outfit.worn_at = d
+        await self.db.flush()
+
+    async def _owned_outfit(self, user: User, outfit_id: UUID) -> Outfit:
+        o = (await self.db.execute(
+            select(Outfit)
+            .where(Outfit.id == outfit_id, Outfit.user_id == user.id)
+            .options(selectinload(Outfit.items).selectinload(OutfitItem.item))
+        )).scalar_one_or_none()
+        if o is None:
+            raise ValueError("Outfit not found")
+        return o
+
+    async def _day_outfits(self, user: User, d: date) -> list[Outfit]:
+        return list((await self.db.execute(
+            select(Outfit)
+            .where(Outfit.user_id == user.id, or_(Outfit.scheduled_for == d, Outfit.worn_at == d))
+            .options(selectinload(Outfit.items).selectinload(OutfitItem.item))
+        )).scalars().all())

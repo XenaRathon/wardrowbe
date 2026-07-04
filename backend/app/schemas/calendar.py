@@ -17,3 +17,13 @@ class DayRecordOut(BaseModel):
     date: date
     primary: OutfitBrief | None = None
     extras: list[OutfitBrief] = []
+
+
+class PlanRequest(BaseModel):
+    outfit_id: UUID
+
+
+class WearRequest(BaseModel):
+    outfit_id: UUID
+    worn_by_user_id: UUID | None = None
+    occasion: str | None = None

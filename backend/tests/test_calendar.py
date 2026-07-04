@@ -1,9 +1,10 @@
-import pytest
 from datetime import date
 from uuid import uuid4
 
+import pytest
+
 from app.models.item import ClothingItem, ItemHistory, ItemStatus
-from app.models.outfit import Outfit, OutfitItem, OutfitStatus, OutfitSource
+from app.models.outfit import Outfit, OutfitItem, OutfitSource, OutfitStatus
 from app.models.preference import UserPreference
 from app.models.user import User
 from app.services.calendar_service import CalendarService
@@ -36,7 +37,7 @@ async def test_get_range_primary_and_extras(db_session):
 
 @pytest.mark.asyncio
 async def test_confirm_logs_items(db_session):
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
 
     u = await _user(db_session)
     d = date(2026, 7, 4)
@@ -63,7 +64,7 @@ async def test_confirm_logs_items(db_session):
 
 @pytest.mark.asyncio
 async def test_remove_wear_reverses_cascade(db_session):
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
 
     u = await _user(db_session)
     d = date(2026, 7, 4)
@@ -130,10 +131,9 @@ async def test_auto_confirm_due_confirms_planned(db_session):
     from datetime import date
     from uuid import uuid4
 
-    from app.models.item import ClothingItem, ItemStatus, ItemHistory
-    from app.models.outfit import Outfit, OutfitItem, OutfitStatus, OutfitSource
+    from app.models.item import ClothingItem, ItemStatus
+    from app.models.outfit import Outfit, OutfitItem, OutfitSource, OutfitStatus
     from app.services.calendar_service import CalendarService
-    from sqlalchemy import select, func
 
     u = await _user(db_session)
     d = date(2026, 7, 4)

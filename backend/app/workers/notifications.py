@@ -14,6 +14,7 @@ from app.models.schedule import Schedule
 from app.models.user import User
 from app.schemas.notification import EmailConfig, ExpoPushConfig, NtfyConfig
 from app.services.ai_service import AIDisabledError
+from app.services.calendar_service import CalendarService
 from app.services.learning_service import LearningService
 from app.services.notification_providers import (
     EmailProvider,
@@ -23,7 +24,6 @@ from app.services.notification_providers import (
     NtfyProvider,
     build_notification_email,
 )
-from app.services.calendar_service import CalendarService
 from app.services.notification_service import DeliveryStatus, NotificationDispatcher
 from app.services.recommendation_service import RecommendationService
 from app.services.weather_service import WeatherService

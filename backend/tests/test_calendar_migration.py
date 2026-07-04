@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
 
 @pytest.mark.asyncio

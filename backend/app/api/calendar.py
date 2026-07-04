@@ -35,7 +35,7 @@ async def plan_day(
     try:
         await svc.set_plan(current_user, d, body.outfit_id)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, str(e)) from e
     return await svc.get_day(current_user, d)
 
 
@@ -48,7 +48,7 @@ async def confirm_day(
     try:
         return await CalendarService(db).confirm(current_user, d)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
 
 
 @router.post("/{d}/wear", response_model=DayRecordOut)
@@ -64,7 +64,7 @@ async def wear_day(
         await svc.log_wear_outfit(current_user, d, body.outfit_id, wearer, body.occasion)
     except ValueError as e:
         status_code = 400 if "worn_by_user_id" in str(e) else 404
-        raise HTTPException(status_code, str(e))
+        raise HTTPException(status_code, str(e)) from e
     return await svc.get_day(current_user, d)
 
 
@@ -79,5 +79,5 @@ async def remove_wear(
     try:
         await svc.remove_wear(current_user, d, outfit_id)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, str(e)) from e
     return await svc.get_day(current_user, d)

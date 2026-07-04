@@ -69,3 +69,5 @@ screenshots/
 testing/
 .playwright-mcp
 *.review.yml
+backend/run-tests.sh
+backend/.venv/

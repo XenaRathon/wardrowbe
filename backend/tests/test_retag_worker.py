@@ -8,6 +8,7 @@ import pytest_asyncio
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.item import ClothingItem, ItemStatus
 from app.models.user import User
 from app.services.ai_service import AIService, ClothingTags
@@ -115,3 +116,60 @@ class TestCheckRetagBackfill:
         assert item.neckline == "crew"
         analyze_mock.assert_not_called()
         assert result["retagged"] == 0
+
+    @pytest.mark.asyncio
+    async def test_analyze_image_is_called_with_resolved_storage_path(
+        self, db_session: AsyncSession, retag_user: User
+    ):
+        """The AI layer must receive a full filesystem path, not the bare
+        relative storage key stored on the item — regression test for the
+        FileNotFoundError bug where every item silently failed to backfill.
+        """
+        item = _make_item(retag_user, image_path="items/foo.jpg")
+        db_session.add(item)
+        await db_session.commit()
+
+        analyze_mock = AsyncMock(return_value=_fake_tags())
+        ctx: dict = {}
+
+        with (
+            patch("app.workers.retag.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch.object(AIService, "analyze_image", analyze_mock),
+        ):
+            await check_retag_backfill(ctx)
+
+        analyze_mock.assert_called_once()
+        called_path = analyze_mock.call_args.args[0]
+        expected_path = f"{get_settings().storage_path}/{item.image_path}"
+        assert called_path == expected_path
+
+    @pytest.mark.asyncio
+    async def test_user_set_subtype_is_preserved_while_cut_attrs_backfill(
+        self, db_session: AsyncSession, retag_user: User
+    ):
+        """subtype may have been manually corrected by the user; the backfill
+        should only fill it in from AI when it's still None, while the four
+        NULL cut attributes are always backfilled.
+        """
+        item = _make_item(retag_user)
+        item.subtype = "user-corrected-subtype"
+        db_session.add(item)
+        await db_session.commit()
+
+        analyze_mock = AsyncMock(return_value=_fake_tags(subtype="ai-guessed-subtype"))
+        ctx: dict = {}
+
+        with (
+            patch("app.workers.retag.get_db_session", return_value=db_session),
+            patch.object(db_session, "close", new_callable=AsyncMock),
+            patch.object(AIService, "analyze_image", analyze_mock),
+        ):
+            result = await check_retag_backfill(ctx)
+
+        await db_session.refresh(item)
+        assert item.subtype == "user-corrected-subtype"
+        assert item.neckline == "v-neck"
+        assert item.silhouette == "slim"
+        assert item.sleeve_length == "long"
+        assert result["retagged"] == 1

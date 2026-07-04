@@ -10,6 +10,7 @@ import logging
 
 from sqlalchemy import and_, select
 
+from app.config import get_settings
 from app.models.item import ClothingItem, ItemStatus
 from app.services.ai_service import AIService
 from app.workers.db import get_db_session
@@ -64,14 +65,18 @@ async def check_retag_backfill(ctx: dict):
 
         ai_service = AIService()
         retagged = 0
+        storage_path = get_settings().storage_path
 
         for item in items:
             try:
-                tags = await ai_service.analyze_image(item.image_path)
+                full_path = f"{storage_path}/{item.image_path}"
+                tags = await ai_service.analyze_image(full_path)
                 fields = tags_to_item_fields(tags)
 
-                for field in (*CUT_ATTRIBUTES, "subtype"):
+                for field in CUT_ATTRIBUTES:
                     setattr(item, field, fields[field])
+                if item.subtype is None:
+                    item.subtype = fields["subtype"]
 
                 await db.commit()
                 retagged += 1

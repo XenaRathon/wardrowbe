@@ -18,6 +18,16 @@ class StyleProfile(BaseModel):
     )
     bold: int = Field(default=50, ge=0, le=100, description="Bold/statement style preference 0-100")
 
+    # Body-type styler profile (optional; coexists with the style sliders above)
+    body_shape: str | None = None          # hourglass|pear|inverted-triangle|rectangle|apple
+    vertical_line: str | None = None        # petite|balanced|tall
+    frame: str | None = None                # small|medium|large
+    color_season: str | None = None         # e.g. soft-autumn, cool-winter
+    kibbe_lean: str | None = None           # dramatic|natural|romantic|classic|gamine
+    palette: list[str] = Field(default_factory=list)
+    season_confirmed: bool = False
+    kibbe_confirmed: bool = False
+
 
 class PreferenceBase(BaseModel):
     # Color preferences

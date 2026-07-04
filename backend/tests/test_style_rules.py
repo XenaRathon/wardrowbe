@@ -1,6 +1,6 @@
 from app.schemas.preference import StyleProfile
+from app.services.ai_service import VALID_COLORS, VALID_NECKLINE, VALID_RISE, VALID_SILHOUETTE
 from app.style_rules import FLATTERING, SEASON_PALETTE, flattering_attrs, palette_for
-from app.services.ai_service import VALID_COLORS, VALID_SILHOUETTE, VALID_NECKLINE, VALID_RISE
 
 
 def test_style_profile_keeps_sliders_and_adds_body_fields():

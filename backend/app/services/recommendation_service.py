@@ -23,6 +23,7 @@ from app.models.outfit import (
 from app.models.preference import UserPreference
 from app.models.user import User
 from app.services.ai_service import AIService, require_internal_ai
+from app.services.family_service import FamilyService
 from app.services.item_scorer import get_season, score_items
 from app.services.suggestion_cache import pop_suggestion, push_suggestions
 from app.services.weather_service import (
@@ -34,6 +35,7 @@ from app.services.weather_service import (
 from app.utils.clothing import INTIMATE_TYPES, deduplicate_by_body_slot, outfit_is_complete
 from app.utils.prompts import load_prompt
 from app.utils.timezone import get_user_today
+from app.utils.visibility import usable_items_filter
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +91,10 @@ class RecommendationService:
         preferences: UserPreference | None,
         exclude_items: list[UUID],
     ) -> list[ClothingItem]:
+        member_ids = await FamilyService(self.db).get_member_ids(user)
         query = select(ClothingItem).where(
             and_(
-                ClothingItem.user_id == user.id,
+                usable_items_filter(user, member_ids),
                 ClothingItem.status == ItemStatus.ready,
                 ClothingItem.is_archived.is_(False),
             )
@@ -714,11 +717,12 @@ class RecommendationService:
             missing_ids = include_set - existing_ids
 
             if missing_ids:
+                member_ids = await FamilyService(self.db).get_member_ids(user)
                 result = await self.db.execute(
                     select(ClothingItem).where(
                         and_(
                             ClothingItem.id.in_(missing_ids),
-                            ClothingItem.user_id == user.id,
+                            usable_items_filter(user, member_ids),
                             ClothingItem.status == ItemStatus.ready,
                             ClothingItem.is_archived.is_(False),
                         )

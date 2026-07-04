@@ -13,6 +13,7 @@ from app.api.notifications import router as notifications_router
 from app.api.outfits import router as outfits_router
 from app.api.pairings import router as pairings_router
 from app.api.preferences import router as preferences_router
+from app.api.style_profile import router as style_profile_router
 from app.api.taxonomy import router as taxonomy_router
 from app.api.users import router as users_router
 from app.api.weather import router as weather_router
@@ -34,3 +35,4 @@ api_router.include_router(notifications_router, prefix="/notifications", tags=["
 api_router.include_router(analytics_router)
 api_router.include_router(learning_router)
 api_router.include_router(taxonomy_router)
+api_router.include_router(style_profile_router)

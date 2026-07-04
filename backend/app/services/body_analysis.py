@@ -62,7 +62,10 @@ def compute_frame(wrist, height) -> str | None:
 
 
 def analyze_measurements(m: dict) -> dict:
-    bust, waist, hips = _f(m, "bust"), _f(m, "waist"), _f(m, "hips")
+    bust = _f(m, "bust")
+    if bust is None:
+        bust = _f(m, "chest")
+    waist, hips = _f(m, "waist"), _f(m, "hips")
     shoulders, height = _f(m, "shoulders"), _f(m, "height")
     inseam, wrist = _f(m, "inseam"), _f(m, "wrist")
     return {

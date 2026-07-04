@@ -53,3 +53,18 @@ def test_analyze_returns_all_three_keys():
                                 "height": 168, "inseam": 78, "wrist": 15})
     assert set(out) == {"body_shape", "vertical_line", "frame"}
     assert out["body_shape"] == "hourglass"
+
+
+def test_analyze_uses_chest_as_bust_alias_when_bust_missing():
+    # Real measurement form collects chest/waist/hips/inseam/height/weight (no bust,
+    # no shoulders). chest should be read as bust so body_shape isn't always None.
+    out = analyze_measurements({"chest": 88, "waist": 72, "hips": 104,
+                                "height": 168, "inseam": 78})
+    assert out["body_shape"] == "pear"
+
+
+def test_analyze_prefers_bust_over_chest_when_both_present():
+    # bust=94/waist=68/hips=96 -> hourglass; chest=88 (would compute to pear) must be ignored.
+    out = analyze_measurements({"bust": 94, "chest": 88, "waist": 68, "hips": 96,
+                                "height": 168, "inseam": 78})
+    assert out["body_shape"] == "hourglass"

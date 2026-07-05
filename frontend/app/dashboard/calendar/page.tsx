@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,8 @@ function todayKey(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function formatHeading(anchor: Date, view: ViewMode): string {
   if (view === 'month') {
     return anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -38,11 +41,31 @@ function formatHeading(anchor: Date, view: ViewMode): string {
   })}`;
 }
 
-export default function CalendarPage() {
+function CalendarPageContent() {
+  const searchParams = useSearchParams();
+  const dayParam = searchParams.get('day');
+  const appliedDayParam = useRef(false);
+
   const [view, setView] = useState<ViewMode>('week');
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+
+  // Deep-link support for the evening wear-nudge notification: `?day=today`
+  // (or `?day=YYYY-MM-DD`) opens that day's detail dialog on mount. Guarded
+  // by a ref so it only fires once — it must not re-open after the user
+  // closes the dialog or as other state changes trigger re-renders.
+  useEffect(() => {
+    if (!dayParam || appliedDayParam.current) return;
+    appliedDayParam.current = true;
+
+    const dateKey = dayParam === 'today' ? todayKey() : dayParam;
+    if (!DATE_KEY_RE.test(dateKey)) return;
+
+    setAnchor(parseYmd(dateKey));
+    setSelectedDate(dateKey);
+    setDetailOpen(true);
+  }, [dayParam]);
 
   const range = useMemo(
     () => (view === 'week' ? weekRange(anchor) : monthRange(anchor)),
@@ -164,5 +187,13 @@ export default function CalendarPage() {
 
       <DayDetailDialog date={selectedDate} open={detailOpen} onOpenChange={setDetailOpen} />
     </div>
+  );
+}
+
+export default function CalendarPage() {
+  return (
+    <Suspense fallback={null}>
+      <CalendarPageContent />
+    </Suspense>
   );
 }

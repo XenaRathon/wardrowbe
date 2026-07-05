@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { Sparkles, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useStyleProfile, useGuidance } from '@/lib/hooks/use-style-profile';
+import { ProfileWizard } from '@/components/style/profile-wizard';
 import { CLOTHING_COLORS } from '@/lib/types';
 
 function formatLabel(value: string | null | undefined): string {
@@ -94,12 +96,21 @@ function LoadingSkeleton() {
 export default function StyleProfilePage() {
   const { data: profile, isLoading: profileLoading, isError: profileIsError } = useStyleProfile();
   const { data: guidance, isLoading: guidanceLoading } = useGuidance();
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   if (profileLoading) {
     return <LoadingSkeleton />;
   }
 
-  const hasProfile = !!profile && Boolean(profile.body_shape || profile.color_season || profile.kibbe_lean);
+  const hasProfile =
+    !!profile &&
+    Boolean(
+      profile.body_shape ||
+        profile.vertical_line ||
+        profile.frame ||
+        profile.color_season ||
+        profile.kibbe_lean
+    );
 
   return (
     <div className="space-y-6">
@@ -113,9 +124,7 @@ export default function StyleProfilePage() {
             Your body shape, colour season, Kibbe lean, and personalized styling guidance.
           </p>
         </div>
-        {/* The guided setup/edit wizard is a separate upcoming task (Task 5); this button
-            is a placeholder until that flow exists. */}
-        <Button disabled title="Guided setup wizard coming soon">
+        <Button onClick={() => setWizardOpen(true)}>
           {hasProfile ? 'Edit Profile' : 'Set Up Profile'}
         </Button>
       </div>
@@ -135,8 +144,8 @@ export default function StyleProfilePage() {
             <CardTitle>No style profile yet</CardTitle>
             <CardDescription>
               Add your body measurements in Settings to compute your shape, then confirm a
-              colour season and Kibbe lean to unlock personalized styling guidance. A guided
-              setup wizard is coming soon.
+              colour season and Kibbe lean to unlock personalized styling guidance. Use the
+              guided setup wizard above, or add measurements manually first.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -147,7 +156,7 @@ export default function StyleProfilePage() {
         </Card>
       )}
 
-      {!profileIsError && profile && (
+      {!profileIsError && hasProfile && profile && (
         <>
           <div className="grid gap-4 md:grid-cols-3">
             <Card>
@@ -257,6 +266,8 @@ export default function StyleProfilePage() {
           </Card>
         </>
       )}
+
+      <ProfileWizard open={wizardOpen} onOpenChange={setWizardOpen} />
     </div>
   );
 }

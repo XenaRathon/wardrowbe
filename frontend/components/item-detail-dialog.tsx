@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { TypeSelector } from '@/components/type-selector';
 import { toast } from 'sonner';
 import { useUpdateItem, useDeleteItem, useReanalyzeItem, useRotateImage, useRemoveBackground, useLogWash, useWashHistory, useItemWearStats, useItemWearHistory, useAddItemImage, useDeleteItemImage, useSetPrimaryImage } from '@/lib/hooks/use-items';
 import { Item, CLOTHING_TYPES, CLOTHING_COLORS } from '@/lib/types';
@@ -129,7 +130,7 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
         id: item.id,
         data: {
           name: editForm.name || undefined,
-          type: editForm.type,
+          type: editForm.type || undefined,
           subtype: editForm.subtype || undefined,
           brand: editForm.brand || undefined,
           primary_color: editForm.primary_color || undefined,
@@ -467,24 +468,13 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
                       placeholder="Item name"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Type</Label>
-                    <Select
-                      value={editForm.type}
-                      onValueChange={(v) => setEditForm({ ...editForm, type: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CLOTHING_TYPES.map((t) => (
-                          <SelectItem key={t.value} value={t.value}>
-                            {t.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <TypeSelector
+                    key={item.id}
+                    value={{ type: editForm.type || undefined, subtype: editForm.subtype || undefined }}
+                    onChange={(v) =>
+                      setEditForm({ ...editForm, type: v.type ?? '', subtype: v.subtype ?? '' })
+                    }
+                  />
                   <div className="space-y-2">
                     <Label>Brand</Label>
                     <Input

@@ -114,6 +114,7 @@ async def create_item(
     primary_color: str | None = Form(None),
     favorite: bool = Form(False),
     owner_user_id: UUID | None = Form(None),
+    is_private: bool = Form(False),
 ) -> ItemResponse:
     # Validate and process image
     image_service = ImageService()
@@ -170,6 +171,7 @@ async def create_item(
         primary_color=primary_color,
         favorite=favorite,
         owner_user_id=owner_user_id,
+        is_private=is_private,
     )
 
     try:

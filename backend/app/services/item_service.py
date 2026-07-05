@@ -215,6 +215,7 @@ class ItemService:
             purchase_date=item_data.purchase_date,
             purchase_price=item_data.purchase_price,
             favorite=item_data.favorite,
+            is_private=item_data.is_private,
         )
 
         self.db.add(item)

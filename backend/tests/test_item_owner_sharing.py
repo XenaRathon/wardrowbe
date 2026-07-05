@@ -74,6 +74,42 @@ class TestAssignOwnerOnCreate:
             )
 
 
+class TestPrivacyOnCreate:
+    """is_private must be applied atomically at insert (ItemService.create), not via a
+    follow-up PATCH — otherwise there's a window where the item exists as visible to the
+    family before being made private. Exercised at the service layer for the same reason
+    as TestAssignOwnerOnCreate: POST /api/v1/items is a multipart/Form + required-image
+    route."""
+
+    @pytest.mark.asyncio
+    async def test_create_with_is_private_true_persists_private_immediately(self, db_session):
+        me = await _user(db_session)
+
+        item_service = ItemService(db_session)
+        item = await item_service.create(
+            user_id=me.id,
+            item_data=ItemCreate(type="jacket", is_private=True),
+            image_paths={"image_path": f"test/{uuid4()}.jpg"},
+        )
+
+        # Asserting immediately after create (before any update/patch call) proves
+        # is_private was set at insert time, not by a subsequent write.
+        assert item.is_private is True
+
+    @pytest.mark.asyncio
+    async def test_create_without_is_private_defaults_to_public(self, db_session):
+        me = await _user(db_session)
+
+        item_service = ItemService(db_session)
+        item = await item_service.create(
+            user_id=me.id,
+            item_data=ItemCreate(type="jacket"),
+            image_paths={"image_path": f"test/{uuid4()}.jpg"},
+        )
+
+        assert item.is_private is False
+
+
 class TestAssignOwnerAndPrivacyOnUpdate:
     """PATCH /api/v1/items/{id} takes a plain JSON body (no image), so this is exercised
     through the real HTTP route."""

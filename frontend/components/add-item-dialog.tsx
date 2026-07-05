@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { useCreateItem, useUpdateItem, useBulkCreateItems, BulkUploadResponse } from '@/lib/hooks/use-items';
+import { useCreateItem, useBulkCreateItems, BulkUploadResponse } from '@/lib/hooks/use-items';
 import { useFamily } from '@/lib/hooks/use-family';
 import { CLOTHING_TYPES, CLOTHING_COLORS } from '@/lib/types';
 
@@ -75,7 +75,6 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const blobUrlsRef = useRef<Set<string>>(new Set());
 
   const createItem = useCreateItem();
-  const updateItem = useUpdateItem();
   const bulkCreateItems = useBulkCreateItems();
   const { data: family } = useFamily();
   const familyMembers = family?.members ?? [];
@@ -152,18 +151,10 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
     if (primaryColor) formData.append('primary_color', primaryColor);
     if (notes) formData.append('notes', notes);
     if (showOwnerSelect && ownerUserId !== ME_VALUE) formData.append('owner_user_id', ownerUserId);
+    if (isPrivate) formData.append('is_private', 'true');
 
     try {
-      const created = await createItem.mutateAsync(formData);
-      // is_private isn't accepted by the create endpoint, so apply it as a follow-up patch
-      if (isPrivate && created?.id) {
-        try {
-          await updateItem.mutateAsync({ id: created.id, data: { is_private: true } });
-        } catch (error) {
-          console.error('Failed to mark new item as private:', error);
-          toast.error('Item created, but failed to mark it private. You can toggle it from the item details.');
-        }
-      }
+      await createItem.mutateAsync(formData);
       handleClose();
     } catch (error) {
       console.error('Failed to create item:', error);

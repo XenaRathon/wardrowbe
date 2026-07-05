@@ -55,6 +55,7 @@ class ItemCreate(ItemBase):
     colors: list[str] | None = None
     primary_color: str | None = None
     owner_user_id: UUID | None = None
+    is_private: bool = False
 
 
 class ItemUpdate(BaseModel):

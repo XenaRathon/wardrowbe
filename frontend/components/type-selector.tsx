@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Select,
   SelectContent,
@@ -9,7 +9,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { useTaxonomy, categoryOfType, subtypesOfType } from '@/lib/hooks/use-taxonomy';
+import {
+  useTaxonomy,
+  categoryOfType,
+  subtypesOfType,
+  resolveCategoryState,
+} from '@/lib/hooks/use-taxonomy';
 
 // Radix Select doesn't allow an empty-string item value, so unset selections
 // are represented with this sentinel and translated back to undefined.
@@ -35,8 +40,20 @@ export function TypeSelector({ value, onChange }: TypeSelectorProps) {
   // state, which is only consulted when value.type is unset.
   const [pendingCategory, setPendingCategory] = useState<string | undefined>(undefined);
 
-  const derivedCategory = taxonomy && value.type ? categoryOfType(taxonomy, value.type) : undefined;
-  const currentCategory = derivedCategory ?? pendingCategory;
+  // Keep pendingCategory in sync with the type's derived category whenever a
+  // type is set. This is what lets clearing the type back to "Let AI
+  // detect..." retain the category context (instead of snapping to "Any
+  // category", which would also disable the Type select below and lock the
+  // user out of re-narrowing type without re-picking category), and what
+  // prevents a stale category from leaking in if this component instance is
+  // reused for a different item with a different type.
+  useEffect(() => {
+    if (taxonomy && value.type) {
+      setPendingCategory(categoryOfType(taxonomy, value.type));
+    }
+  }, [taxonomy, value.type]);
+
+  const { currentCategory } = resolveCategoryState(taxonomy, value.type, pendingCategory);
   const typesForCategory = taxonomy?.categories.find((c) => c.category === currentCategory)?.types ?? [];
   const subtypes = taxonomy && value.type ? subtypesOfType(taxonomy, value.type) : [];
 

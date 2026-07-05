@@ -40,3 +40,27 @@ export function subtypesOfType(taxonomy: Taxonomy, type: string): string[] {
   }
   return [];
 }
+
+export interface CategoryResolution {
+  pendingCategory: string | undefined;
+  currentCategory: string | undefined;
+}
+
+// Pure model of TypeSelector's "which category should show" logic for a
+// single render+sync-effect cycle:
+// - `type` truthy (and taxonomy loaded)  -> its category always wins, and
+//   becomes the new pendingCategory (this is what prevents a stale category
+//   from a previously-bound item leaking into a reused component instance).
+// - `type` falsy (cleared, or never set)  -> pendingCategory is left as-is,
+//   so a category picked explicitly, or one derived before the type was
+//   cleared, keeps being shown instead of snapping back to "Any category".
+export function resolveCategoryState(
+  taxonomy: Taxonomy | undefined,
+  type: string | undefined,
+  prevPendingCategory: string | undefined
+): CategoryResolution {
+  const derivedCategory = taxonomy && type ? categoryOfType(taxonomy, type) : undefined;
+  const pendingCategory = taxonomy && type ? derivedCategory : prevPendingCategory;
+  const currentCategory = derivedCategory ?? pendingCategory;
+  return { pendingCategory, currentCategory };
+}

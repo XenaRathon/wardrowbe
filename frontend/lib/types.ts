@@ -194,6 +194,21 @@ export const CLOTHING_TYPES = [
   { label: 'Base Layer', value: 'base-layer' },
 ] as const;
 
+// Taxonomy types — category > type > subtype hierarchy served by GET /api/v1/taxonomy
+export interface TaxonomyType {
+  type: string;
+  subtypes: string[];
+}
+
+export interface TaxonomyCategory {
+  category: string;
+  types: TaxonomyType[];
+}
+
+export interface Taxonomy {
+  categories: TaxonomyCategory[];
+}
+
 export const OCCASIONS = [
   { label: 'Casual', value: 'casual' },
   { label: 'Office', value: 'office' },

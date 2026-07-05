@@ -6,6 +6,7 @@ import {
   Home,
   Shirt,
   Sparkles,
+  Palette,
   Layers,
   LayoutGrid,
   CalendarDays,
@@ -16,6 +17,7 @@ import {
   Users,
   Bell,
   HeartHandshake,
+  ShoppingBag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,9 +25,11 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Wardrobe', href: '/dashboard/wardrobe', icon: Shirt },
   { name: 'Suggest Outfit', href: '/dashboard/suggest', icon: Sparkles },
+  { name: 'Style Profile', href: '/dashboard/style', icon: Palette },
   { name: 'Outfits', href: '/dashboard/outfits', icon: LayoutGrid },
   { name: 'Calendar', href: '/dashboard/calendar', icon: CalendarDays },
   { name: 'Pairings', href: '/dashboard/pairings', icon: Layers },
+  { name: 'Buy Advisor', href: '/dashboard/buy-advisor', icon: ShoppingBag },
   { name: 'History', href: '/dashboard/history', icon: History },
   { name: 'Family Feed', href: '/dashboard/family/feed', icon: HeartHandshake },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },

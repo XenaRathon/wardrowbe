@@ -35,9 +35,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { TypeSelector } from '@/components/type-selector';
 import { useCreateItem, useBulkCreateItems, BulkUploadResponse } from '@/lib/hooks/use-items';
 import { useFamily } from '@/lib/hooks/use-family';
-import { CLOTHING_TYPES, CLOTHING_COLORS } from '@/lib/types';
+import { CLOTHING_COLORS } from '@/lib/types';
 
 interface AddItemDialogProps {
   open: boolean;
@@ -58,6 +59,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [type, setType] = useState('');
+  const [subtype, setSubtype] = useState('');
   const [name, setName] = useState('');
   const [brand, setBrand] = useState('');
   const [primaryColor, setPrimaryColor] = useState('');
@@ -146,6 +148,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
     formData.append('image', file);
     // Type is optional - AI will detect if not provided
     if (type) formData.append('type', type);
+    if (subtype) formData.append('subtype', subtype);
     if (name) formData.append('name', name);
     if (brand) formData.append('brand', brand);
     if (primaryColor) formData.append('primary_color', primaryColor);
@@ -199,6 +202,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
     setFile(null);
     setPreview(null);
     setType('');
+    setSubtype('');
     setName('');
     setBrand('');
     setPrimaryColor('');
@@ -304,21 +308,13 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
               )}
 
               <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="type">Type <span className="text-muted-foreground font-normal">(AI will detect if empty)</span></Label>
-                  <Select value={type} onValueChange={setType}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Let AI detect..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CLOTHING_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <TypeSelector
+                  value={{ type: type || undefined, subtype: subtype || undefined }}
+                  onChange={(v) => {
+                    setType(v.type ?? '');
+                    setSubtype(v.subtype ?? '');
+                  }}
+                />
 
                 <div className="space-y-2">
                   <Label htmlFor="name">Name (optional)</Label>

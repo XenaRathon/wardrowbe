@@ -34,6 +34,10 @@ class ClothingTags(BaseModel):
     formality: str | None = None
     season: list[str] = []
     fit: str | None = None
+    neckline: str | None = None
+    rise: str | None = None
+    silhouette: str | None = None
+    sleeve_length: str | None = None
     occasion: list[str] = []
     brand: str | None = None
     condition: str | None = None
@@ -166,6 +170,12 @@ VALID_STYLES = {
     "rugged",
 }
 VALID_SEASONS = {"spring", "summer", "fall", "winter", "all-season"}
+VALID_NECKLINE = {"crew", "v-neck", "scoop", "boat", "halter", "off-shoulder",
+                  "turtleneck", "cowl", "square", "sweetheart", "collared", "strapless"}
+VALID_RISE = {"high", "mid", "low"}
+VALID_SILHOUETTE = {"a-line", "bodycon", "straight", "wrap", "fit-and-flare", "shift",
+                    "pencil", "pleated", "oversized", "tailored", "skinny", "bootcut", "wide-leg"}
+VALID_SLEEVE = {"sleeveless", "short", "three-quarter", "long"}
 
 
 def compute_tag_completeness(tags: "ClothingTags") -> float:
@@ -452,6 +462,10 @@ class AIService:
         tags.style = validate_list(data.get("style", []), VALID_STYLES)
         tags.season = validate_list(data.get("season", []), VALID_SEASONS)
         tags.fit = validate_value(data.get("fit"), VALID_FIT)
+        tags.neckline = validate_value(data.get("neckline"), VALID_NECKLINE)
+        tags.rise = validate_value(data.get("rise"), VALID_RISE)
+        tags.silhouette = validate_value(data.get("silhouette"), VALID_SILHOUETTE)
+        tags.sleeve_length = validate_value(data.get("sleeve_length"), VALID_SLEEVE)
         tags.confidence = compute_tag_completeness(tags)
 
         logger.info(

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -43,11 +44,19 @@ def tags_to_item_fields(tags: ClothingTags, raw_response: str | None = None) -> 
         "style": tags.style,
         "formality": tags.formality,
         "season": tags.season,
+        "neckline": tags.neckline,
+        "rise": tags.rise,
+        "silhouette": tags.silhouette,
+        "sleeve_length": tags.sleeve_length,
         "tags": tags_jsonb,  # Populate the tags JSONB field for frontend
         "ai_processed": True,
         "ai_confidence": tags.confidence,
         "ai_description": tags.description,  # Human-readable description
         "status": ItemStatus.ready,
+        # Mark as checked for cut attributes so the nightly retag backfill
+        # worker (app/workers/retag.py) doesn't re-process a freshly-tagged
+        # item that already went through the current prompt/attribute set.
+        "cut_attrs_checked_at": datetime.now(UTC),
     }
     if raw_response:
         fields["ai_raw_response"] = {"raw_text": raw_response}
@@ -185,6 +194,7 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
                     "ai_raw_response",
                     "tags",
                     "ai_description",
+                    "cut_attrs_checked_at",
                 ):
                     setattr(item, field, value)
                 # Only update content fields if user hasn't set them (or they're default/unknown)

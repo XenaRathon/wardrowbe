@@ -2,15 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Shirt, Sparkles, LayoutGrid, CalendarDays, Settings } from 'lucide-react';
+import { Home, Shirt, Sparkles, Palette, LayoutGrid, CalendarDays, Settings, ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Home', href: '/dashboard', icon: Home },
   { name: 'Wardrobe', href: '/dashboard/wardrobe', icon: Shirt },
   { name: 'Suggest', href: '/dashboard/suggest', icon: Sparkles },
+  { name: 'Style', href: '/dashboard/style', icon: Palette },
   { name: 'Outfits', href: '/dashboard/outfits', icon: LayoutGrid },
   { name: 'Calendar', href: '/dashboard/calendar', icon: CalendarDays },
+  { name: 'Buy', href: '/dashboard/buy-advisor', icon: ShoppingBag },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 

@@ -434,3 +434,35 @@ export interface GeneratePairingsResponse {
   generated: number;
   pairings: Pairing[];
 }
+
+// Buy-Advisor types — GET /buy-advisor, POST /buy-advisor/size
+export interface BuySearchLink {
+  retailer: string;
+  url: string;
+}
+
+export interface BuyRec {
+  role: string;
+  type: string;
+  silhouette: string | null;
+  color: string | null;
+  rationale: string;
+  search_links: BuySearchLink[];
+}
+
+export interface BuyAdvisorResponse {
+  recommendations: BuyRec[];
+}
+
+// POST /buy-advisor/size body
+export interface SizeForUrlRequest {
+  product_url: string;
+  product_type?: string;
+}
+
+// POST /buy-advisor/size response
+export interface SizeResult {
+  size: string;
+  confidence: string;
+  source: string;
+}

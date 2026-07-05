@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Shirt, Sparkles, Palette, LayoutGrid, Settings } from 'lucide-react';
+import { Home, Shirt, Sparkles, Palette, LayoutGrid, Settings, ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
@@ -11,6 +11,7 @@ const navigation = [
   { name: 'Suggest', href: '/dashboard/suggest', icon: Sparkles },
   { name: 'Style', href: '/dashboard/style', icon: Palette },
   { name: 'Outfits', href: '/dashboard/outfits', icon: LayoutGrid },
+  { name: 'Buy', href: '/dashboard/buy-advisor', icon: ShoppingBag },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 

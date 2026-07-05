@@ -16,6 +16,7 @@ import {
   Users,
   Bell,
   HeartHandshake,
+  ShoppingBag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +27,7 @@ const navigation = [
   { name: 'Style Profile', href: '/dashboard/style', icon: Palette },
   { name: 'Outfits', href: '/dashboard/outfits', icon: LayoutGrid },
   { name: 'Pairings', href: '/dashboard/pairings', icon: Layers },
+  { name: 'Buy Advisor', href: '/dashboard/buy-advisor', icon: ShoppingBag },
   { name: 'History', href: '/dashboard/history', icon: History },
   { name: 'Family Feed', href: '/dashboard/family/feed', icon: HeartHandshake },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },

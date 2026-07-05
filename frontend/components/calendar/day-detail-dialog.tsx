@@ -59,6 +59,28 @@ function OutfitLabel({ occasion, name }: { occasion: string; name: string | null
   );
 }
 
+function RepeatWarningBadges({ ids }: { ids: string[] }) {
+  const { data: warnedItems } = useItems({ ids: ids.join(',') }, 1, ids.length || 1);
+  const warnedItemNames = useMemo(() => {
+    const byId = new Map((warnedItems?.items ?? []).map((item) => [item.id, item.name || item.type]));
+    return ids.map((id) => byId.get(id) || 'an item');
+  }, [warnedItems, ids]);
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {warnedItemNames.map((name, i) => (
+        <Badge
+          key={ids[i]}
+          variant="outline"
+          className="border-amber-500 bg-amber-50 text-amber-700 text-xs"
+        >
+          Recently worn: {name}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
 export function DayDetailDialog({ date, open, onOpenChange }: DayDetailDialogProps) {
   const [planOutfitId, setPlanOutfitId] = useState('');
   const [logOutfitId, setLogOutfitId] = useState('');
@@ -86,16 +108,6 @@ export function DayDetailDialog({ date, open, onOpenChange }: DayDetailDialogPro
   const { data: family } = useFamily();
   const members = family?.members ?? [];
 
-  const { data: warnedItems } = useItems(
-    { ids: repeatWarnings.join(',') },
-    1,
-    repeatWarnings.length || 1
-  );
-  const warnedItemNames = useMemo(() => {
-    const byId = new Map((warnedItems?.items ?? []).map((item) => [item.id, item.name || item.type]));
-    return repeatWarnings.map((id) => byId.get(id) || 'an item');
-  }, [warnedItems, repeatWarnings]);
-
   const planDay = usePlanDay();
   const confirmDay = useConfirmDay();
   const logWear = useLogWear();
@@ -103,8 +115,9 @@ export function DayDetailDialog({ date, open, onOpenChange }: DayDetailDialogPro
 
   if (!date) return null;
 
-  const hasUnconfirmedPlan = !!primary && !primary.worn_at;
-  const canPlan = !primary || !primary.worn_at;
+  const confirmedToday = !!primary?.worn_at && primary.worn_at === date;
+  const hasUnconfirmedPlan = !!primary && !confirmedToday;
+  const canPlan = !primary || !confirmedToday;
 
   const handlePlan = async () => {
     if (!planOutfitId) return;
@@ -174,19 +187,7 @@ export function DayDetailDialog({ date, open, onOpenChange }: DayDetailDialogPro
             </div>
           ) : (
             <>
-              {repeatWarnings.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {warnedItemNames.map((name, i) => (
-                    <Badge
-                      key={repeatWarnings[i]}
-                      variant="outline"
-                      className="border-amber-500 bg-amber-50 text-amber-700 text-xs"
-                    >
-                      Recently worn: {name}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+              {repeatWarnings.length > 0 && <RepeatWarningBadges ids={repeatWarnings} />}
 
               {/* Current plan / wear status */}
               <div className="space-y-2">
@@ -197,8 +198,8 @@ export function DayDetailDialog({ date, open, onOpenChange }: DayDetailDialogPro
                       <Shirt className="h-4 w-4 text-muted-foreground" />
                       <OutfitLabel occasion={primary.occasion} name={primary.name} />
                     </div>
-                    <Badge variant={primary.worn_at ? 'default' : 'secondary'}>
-                      {primary.worn_at ? 'Worn' : 'Planned'}
+                    <Badge variant={confirmedToday ? 'default' : 'secondary'}>
+                      {confirmedToday ? 'Worn' : 'Planned'}
                     </Badge>
                   </div>
                 ) : (

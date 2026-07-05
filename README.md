@@ -3,9 +3,14 @@
 > A lightly-patched fork of [`Anyesh/wardrowbe`](https://github.com/Anyesh/wardrowbe) running on the F.A.S.C. homelab. It is **built straight from this Forgejo repo by Forgejo Actions** and deployed with DockHand — no images are built by hand.
 >
 > **What's different from upstream**
-> - **Bigger clothing taxonomy** — added intimates/loungewear + activewear types (bra, underwear, lingerie, pajamas, swimwear, leggings, joggers, tracksuit…) so a whole drawer stops being tagged `unknown`.
+> - **Bigger clothing taxonomy** — added intimates/loungewear + activewear types (bra, underwear, lingerie, pajamas, swimwear, leggings, joggers, tracksuit…) so a whole drawer stops being tagged `unknown`, plus a cascading **category → type → subtype** picker (e.g. Intimates → bra → push-up) so items are precise, not just bucketed.
 > - **Sharper AI input** — the vision pre-processor's downscale ceiling was raised **512px → 1024px**, so patterns and fabric detail survive to the model.
 > - **Local, private AI** — vision tagging points at a self-hosted Ollama (OpenAI-compatible), and login is gated by Authentik SSO. Both are set via env vars.
+> - **Richer AI tagging** — the tagger now also extracts cut attributes (neckline, rise, silhouette, sleeve length) that feed the styler below, with a nightly worker that backfills them onto older items.
+> - **Outfit Calendar + household sharing** — plan outfits ahead on a week/month calendar, log what you actually wore (feeds wear stats), get an evening "what did you wear?" nudge with silent auto-confirm of planned days, and "don't repeat within N days" warnings. Households can share one closet: each item has an owner and a private toggle, with a Mine/Everyone filter to switch views.
+> - **Body-Type Styler + Buy-Advisor** — a style profile computed from your measurements (body shape, vertical line, frame) plus an AI-drafted colour season and Kibbe lean that you review and confirm — all local AI, and body photos never leave your server. It scores your daily outfit suggestions for what flatters your shape and palette (down-ranked, never hidden) and powers a standalone styling guide. The **Buy-Advisor** does gap analysis on your closet to suggest what to buy (in flattering cuts/colours) with retailer search links, plus a paste-a-product-URL **size finder** that checks a listing's size chart against your measurements (bra/intimate sizing follows the [r/ABraThatFits](https://www.reddit.com/r/ABraThatFits/) method).
+>
+> See the **[project wiki](../../wiki)** for setup instructions and how-to-use guides for the calendar, sharing, styler, and buy-advisor.
 >
 > <details>
 > <summary><b>How the build/deploy pipeline works</b></summary>
@@ -14,7 +19,7 @@
 > 2. It builds the <b>backend</b> and <b>frontend</b> images and pushes them to the <b>Forgejo container registry</b> (e.g. <code>your-forgejo-host/you/wardrobe-backend:latest</code>).
 > 3. <b>DockHand</b> redeploys the stack, pulling those tags.
 >
-> The CI runner mounts the host Docker socket so jobs can run <code>docker build</code>; the registry is reached over the LAN and whitelisted as an <code>insecure-registries</code> entry on the Docker host.
+> The CI runner mounts the host Docker socket so jobs can run <code>docker build</code>; the registry is reached over the LAN and whitelisted as an <code>insecure-registries</code> entry on the Docker host. Schema changes don't auto-migrate on startup — see the wiki's Setup page for running <code>alembic upgrade head</code> after a deploy.
 > </details>
 >
 > <details>
@@ -24,9 +29,10 @@
 > - Add a repo Actions secret <b><code>REGISTRY_TOKEN</code></b> = a Forgejo token with <code>write:package</code> scope.
 > - Point the app at your AI + SSO with the <code>WARDROWBE_AI_*</code> and <code>WARDROWBE_OIDC_*</code> env vars (see the Quick Start below).
 > - Plain-HTTP LAN registry? Add it to the Docker daemon's <code>insecure-registries</code>, or front it with TLS.
+> - Fill in your own measurements before running the Style Profile wizard — the shape/frame math and bra-size finder are only as good as what you enter.
 > </details>
 >
-> *Fork changes were made with the help of **Claude (Opus 4.8)**.*
+> *Fork changes — the F.A.S.C. taxonomy/AI tweaks, the outfit calendar + household sharing, and the body-type styler + buy-advisor — were built with the help of **Claude (Anthropic, Opus 4.8)**.*
 
 ---
 

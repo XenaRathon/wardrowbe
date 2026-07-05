@@ -34,6 +34,7 @@ export function useItems(filters: ItemFilter = {}, page = 1, pageSize = 20) {
       if (filters.sort_by) params.sort_by = filters.sort_by;
       if (filters.sort_order) params.sort_order = filters.sort_order;
       if (filters.ids) params.ids = filters.ids;
+      if (filters.owner_scope) params.owner_scope = filters.owner_scope;
 
       return api.get<ItemListResponse>('/items', { params });
     },

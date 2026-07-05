@@ -79,6 +79,7 @@ export interface ItemFilter {
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
   ids?: string;
+  owner_scope?: 'mine' | 'family';
 }
 
 export interface StyleProfile {

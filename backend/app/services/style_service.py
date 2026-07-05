@@ -81,6 +81,14 @@ class StyleService:
             if field in fields:
                 setattr(profile, field, fields[field])
 
+        # The frontend can't compute the season->palette map (backend-only, in
+        # style_rules.SEASON_PALETTE), so if the client set a color_season without
+        # also supplying an explicit palette, derive and persist it here. Without
+        # this, `palette` stays [] forever and item_scorer._style_fit_score's
+        # colour-season matching never fires.
+        if "color_season" in fields and "palette" not in fields:
+            profile.palette = palette_for(profile.color_season)
+
         preferences.style_profile = profile.model_dump()
         flag_modified(preferences, "style_profile")
         await self.db.commit()

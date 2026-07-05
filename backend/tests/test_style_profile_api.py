@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.services.ai_service import AIDisabledError
+from app.style_rules import palette_for
 
 
 @pytest.mark.asyncio
@@ -22,6 +23,34 @@ async def test_put_style_profile_saves_confirmed(client, auth_headers):
     assert r.status_code == 200
     g = await client.get("/api/v1/style-profile", headers=auth_headers)
     assert g.json()["color_season"] == "soft-autumn" and g.json()["season_confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_put_style_profile_derives_palette_from_color_season(client, auth_headers):
+    """When the client saves a color_season without an explicit palette (the frontend
+    can't compute the season->palette map -- that's backend-only), the backend must
+    derive it via style_rules.palette_for so downstream colour-season scoring can fire."""
+    r = await client.put("/api/v1/style-profile", headers=auth_headers,
+                         json={"color_season": "soft-autumn", "season_confirmed": True})
+    assert r.status_code == 200
+
+    g = await client.get("/api/v1/style-profile", headers=auth_headers)
+    body = g.json()
+    assert body["palette"] == palette_for("soft-autumn")
+    assert body["palette"] != []
+
+
+@pytest.mark.asyncio
+async def test_put_style_profile_respects_explicit_palette(client, auth_headers):
+    """If the client DOES pass an explicit palette, it must be respected as-is,
+    not overwritten by the derived season->palette lookup."""
+    r = await client.put("/api/v1/style-profile", headers=auth_headers,
+                         json={"color_season": "soft-autumn", "palette": ["olive"],
+                               "season_confirmed": True})
+    assert r.status_code == 200
+
+    g = await client.get("/api/v1/style-profile", headers=auth_headers)
+    assert g.json()["palette"] == ["olive"]
 
 
 @pytest.mark.asyncio

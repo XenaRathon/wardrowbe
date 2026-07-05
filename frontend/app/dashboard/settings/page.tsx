@@ -51,6 +51,10 @@ const BODY_MEASUREMENT_FIELDS = [
   { key: 'waist', unitMetric: 'cm', unitImperial: 'in', placeholderMetric: 'e.g. 82', placeholderImperial: 'e.g. 32' },
   { key: 'hips', unitMetric: 'cm', unitImperial: 'in', placeholderMetric: 'e.g. 98', placeholderImperial: 'e.g. 39' },
   { key: 'inseam', unitMetric: 'cm', unitImperial: 'in', placeholderMetric: 'e.g. 81', placeholderImperial: 'e.g. 32' },
+  { key: 'bust', unitMetric: 'cm', unitImperial: 'in', placeholderMetric: 'e.g. 92', placeholderImperial: 'e.g. 36' },
+  { key: 'underbust', unitMetric: 'cm', unitImperial: 'in', placeholderMetric: 'e.g. 78', placeholderImperial: 'e.g. 31' },
+  { key: 'shoulders', unitMetric: 'cm', unitImperial: 'in', placeholderMetric: 'e.g. 40', placeholderImperial: 'e.g. 16' },
+  { key: 'wrist', unitMetric: 'cm', unitImperial: 'in', placeholderMetric: 'e.g. 16', placeholderImperial: 'e.g. 6' },
 ] as const;
 
 const SIZE_FIELDS = [
@@ -213,7 +217,7 @@ export default function SettingsPage() {
 
       if (userProfile.body_measurements) {
         const initial: Record<string, string> = {};
-        const numericKeys = ['chest', 'waist', 'hips', 'inseam', 'height', 'weight'];
+        const numericKeys = ['chest', 'waist', 'hips', 'inseam', 'height', 'weight', 'bust', 'underbust', 'shoulders', 'wrist'];
         const displayUnitSystem = unitSystemRef.current;
         for (const [key, value] of Object.entries(userProfile.body_measurements)) {
           if (numericKeys.includes(key) && typeof value === 'number') {
@@ -386,7 +390,7 @@ export default function SettingsPage() {
   const handleToggleUnits = () => {
     const newSystem: UnitSystem = unitSystem === 'metric' ? 'imperial' : 'metric';
     const converted: Record<string, string> = {};
-    const numericKeys = ['chest', 'waist', 'hips', 'inseam', 'height', 'weight'];
+    const numericKeys = ['chest', 'waist', 'hips', 'inseam', 'height', 'weight', 'bust', 'underbust', 'shoulders', 'wrist'];
     for (const [key, value] of Object.entries(measurements)) {
       const trimmed = value.trim();
       if (!trimmed) { converted[key] = value; continue; }
@@ -411,7 +415,7 @@ export default function SettingsPage() {
 
   const handleSaveMeasurements = async () => {
     const parsed: Record<string, number | string> = {};
-    const numericKeys = ['chest', 'waist', 'hips', 'inseam', 'height', 'weight'];
+    const numericKeys = ['chest', 'waist', 'hips', 'inseam', 'height', 'weight', 'bust', 'underbust', 'shoulders', 'wrist'];
     for (const [key, value] of Object.entries(measurements)) {
       const trimmed = value.trim();
       if (!trimmed) continue;
@@ -691,7 +695,11 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <Label className="text-muted-foreground mb-3 block">Body</Label>
+              <Label className="text-muted-foreground mb-1 block">Body</Label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Bust, underbust, shoulders, and wrist power the Style Profile&apos;s body shape,
+                frame, and vertical proportion analysis. Underbust is also used for bra sizing.
+              </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {BODY_MEASUREMENT_FIELDS.map((field) => {
                   const unit = unitSystem === 'metric' ? field.unitMetric : field.unitImperial;

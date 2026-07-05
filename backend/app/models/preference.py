@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Time, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,6 +41,10 @@ class UserPreference(Base):
 
     # Recommendation settings
     avoid_repeat_days: Mapped[int] = mapped_column(Integer, default=7)
+    wear_nudge_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    wear_nudge_time: Mapped[time] = mapped_column(
+        Time, default=time(20, 0), server_default="20:00", nullable=False
+    )
     prefer_underused_items: Mapped[bool] = mapped_column(Boolean, default=True)
     variety_level: Mapped[str] = mapped_column(String(20), default="moderate")
 

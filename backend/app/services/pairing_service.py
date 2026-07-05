@@ -11,9 +11,11 @@ from app.models.item import ClothingItem, ItemStatus
 from app.models.outfit import FamilyOutfitRating, Outfit, OutfitItem, OutfitSource, OutfitStatus
 from app.models.user import User
 from app.services.ai_service import AIService, require_internal_ai
+from app.services.family_service import FamilyService
 from app.utils.clothing import INTIMATE_TYPES, deduplicate_by_body_slot, outfit_is_complete
 from app.utils.prompts import load_prompt
 from app.utils.timezone import get_user_today
+from app.utils.visibility import usable_items_filter
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +40,10 @@ class PairingService:
         return result.scalar_one_or_none()
 
     async def get_available_items(self, user: User, exclude_item_id: UUID) -> list[ClothingItem]:
+        member_ids = await FamilyService(self.db).get_member_ids(user)
         query = select(ClothingItem).where(
             and_(
-                ClothingItem.user_id == user.id,
+                usable_items_filter(user, member_ids),
                 ClothingItem.status == ItemStatus.ready,
                 ClothingItem.is_archived.is_(False),
                 ClothingItem.id != exclude_item_id,

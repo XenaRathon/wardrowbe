@@ -23,11 +23,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AddItemDialog } from '@/components/add-item-dialog';
 import { ItemDetailDialog } from '@/components/item-detail-dialog';
 import { BulkActionToolbar, BulkSelection } from '@/components/bulk-action-toolbar';
 import { useItems, useItem, useItemTypes, useReanalyzeItem, useBulkDeleteItems, useBulkReanalyzeItems, BulkOperationParams } from '@/lib/hooks/use-items';
 import { useUserProfile } from '@/lib/hooks/use-user';
+import { useFamily } from '@/lib/hooks/use-family';
 import { CLOTHING_TYPES, CLOTHING_COLORS, Item } from '@/lib/types';
 import { toast } from 'sonner';
 import { formatWornAgo, getWornAgoColorClass } from '@/lib/utils';
@@ -222,6 +224,8 @@ export default function WardrobePage() {
   const router = useRouter();
   const { data: userProfile } = useUserProfile();
   const userTimezone = userProfile?.timezone || 'UTC';
+  const { data: family } = useFamily();
+  const hasSharedFamily = (family?.members?.length ?? 0) > 1;
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selection, setSelection] = useState<BulkSelection>({
     mode: 'none',
@@ -236,6 +240,7 @@ export default function WardrobePage() {
   const [favoriteFilter, setFavoriteFilter] = useState<boolean | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
+  const [ownerScope, setOwnerScope] = useState<'mine' | 'family'>('mine');
 
   // Open item detail dialog from URL param (e.g. ?item=uuid from outfit pages)
   useEffect(() => {
@@ -255,6 +260,7 @@ export default function WardrobePage() {
     is_archived: false,
     sort_by: sortOption.value,
     sort_order: sortOption.order,
+    owner_scope: hasSharedFamily ? ownerScope : undefined,
   };
 
   const activeFilterCount = [
@@ -285,7 +291,7 @@ export default function WardrobePage() {
   // Clear selection when filters change (but not page - allow cross-page selection)
   useEffect(() => {
     setSelection({ mode: 'none', selectedIds: new Set(), excludedIds: new Set() });
-  }, [search, typeFilter, needsWash, favoriteFilter, sortIndex]);
+  }, [search, typeFilter, needsWash, favoriteFilter, sortIndex, ownerScope]);
 
   const handleRetry = (itemId: string) => {
     reanalyze.mutate(itemId);
@@ -425,6 +431,21 @@ export default function WardrobePage() {
       </div>
 
       <div className="space-y-3">
+        {hasSharedFamily && (
+          <Tabs
+            value={ownerScope}
+            onValueChange={(v) => {
+              setOwnerScope(v as 'mine' | 'family');
+              setPage(1);
+            }}
+          >
+            <TabsList>
+              <TabsTrigger value="mine">Mine</TabsTrigger>
+              <TabsTrigger value="family">Everyone</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+
         {/* Main row: search + sort + filter toggle */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">

@@ -69,6 +69,9 @@ class ClothingItem(Base):
     ai_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
     ai_raw_response: Mapped[dict | None] = mapped_column(JSONB)
 
+    # Sharing
+    is_private: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+
     # Usage tracking
     wear_count: Mapped[int] = mapped_column(Integer, default=0)
     last_worn_at: Mapped[date | None] = mapped_column(Date)
@@ -128,6 +131,9 @@ class ItemHistory(Base):
     )
     outfit_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("outfits.id", ondelete="SET NULL")
+    )
+    worn_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
 
     worn_at: Mapped[date] = mapped_column(Date, nullable=False)

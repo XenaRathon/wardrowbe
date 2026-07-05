@@ -1022,6 +1022,98 @@ git commit -m "feat(calendar): evening wear-nudge worker on unlogged days (dedup
 
 ---
 
+## Task 10: Silent end-of-day auto-confirm of planned outfits
+
+**Files:**
+- Modify: `backend/app/services/calendar_service.py` (`auto_confirm_due`)
+- Modify: `backend/app/workers/notifications.py` (`check_auto_confirm` job + nudge skip-if-planned)
+- Modify: `backend/app/workers/worker.py` (register cron)
+- Test: `backend/tests/test_calendar.py` + `backend/tests/test_notification_workers.py`
+
+**Interfaces:**
+- Consumes: `CalendarService._log_outfit` / `_day_outfits` (Task 7), `UserPreference.wear_nudge_time`, `get_user_now`/`get_user_today`.
+- Produces:
+  - `CalendarService.auto_confirm_due(user, on_date) -> int` — confirms every outfit with `scheduled_for == on_date` AND `worn_at IS NULL` for `user` (sets `worn_at`, cascades `log_wear` with `worn_by_user_id = user.id`), idempotent; returns the count confirmed.
+  - Worker `check_auto_confirm(ctx)` — for each user past their local `wear_nudge_time` today, calls `auto_confirm_due(user, local_today)`.
+  - `check_wear_nudges` gains a skip: users who have a `scheduled_for == today` outfit are NOT nudged (planned days are auto-confirmed, never nudged), so ordering between the two cron jobs doesn't matter.
+
+**Rationale:** The spec's daily loop = planned days auto-confirm silently; only unplanned days get the nudge. Task 9 built the nudge + manual confirm; this task adds the silent auto-confirm and makes the nudge planned-day-aware.
+
+- [ ] **Step 1: Write the failing test (service)**
+
+Add to `backend/tests/test_calendar.py` (reuse the file's `_user`/`_outfit`/`OutfitItem` helpers):
+```python
+@pytest.mark.asyncio
+async def test_auto_confirm_due_confirms_planned(db_session):
+    from datetime import date
+    from uuid import uuid4
+    from app.models.item import ClothingItem, ItemStatus, ItemHistory
+    from app.models.outfit import Outfit, OutfitItem, OutfitStatus, OutfitSource
+    from app.services.calendar_service import CalendarService
+    from sqlalchemy import select, func
+
+    u = await _user(db_session)
+    d = date(2026, 7, 4)
+    item = ClothingItem(id=uuid4(), user_id=u.id, image_path="x.jpg", type="shirt",
+                        status=ItemStatus.ready, wear_count=0)
+    o = Outfit(id=uuid4(), user_id=u.id, occasion="casual", status=OutfitStatus.pending,
+               source=OutfitSource.manual, scheduled_for=d)
+    db_session.add_all([item, o]); await db_session.commit()
+    db_session.add(OutfitItem(outfit_id=o.id, item_id=item.id, position=0)); await db_session.commit()
+
+    n = await CalendarService(db_session).auto_confirm_due(u, d)
+    await db_session.refresh(item); await db_session.refresh(o)
+    assert n == 1
+    assert o.worn_at == d
+    assert item.wear_count == 1
+    # idempotent
+    assert await CalendarService(db_session).auto_confirm_due(u, d) == 0
+    await db_session.refresh(item)
+    assert item.wear_count == 1
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `bash backend/run-tests.sh tests/test_calendar.py::test_auto_confirm_due_confirms_planned -v`
+Expected: FAIL (`auto_confirm_due` missing).
+
+- [ ] **Step 3: Implement the service method**
+
+Add to `CalendarService`:
+```python
+    async def auto_confirm_due(self, user, on_date) -> int:
+        count = 0
+        for o in await self._day_outfits(user, on_date):
+            if o.scheduled_for == on_date and o.worn_at is None:
+                await self._log_outfit(user, o, on_date, worn_by_user_id=user.id)
+                count += 1
+        return count
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `bash backend/run-tests.sh tests/test_calendar.py::test_auto_confirm_due_confirms_planned -v`
+Expected: PASS.
+
+- [ ] **Step 5: Worker job + nudge skip-if-planned (TDD)**
+
+Add to `backend/tests/test_notification_workers.py` (mirror the existing harness): a test that `check_auto_confirm(ctx)` confirms a user's planned-but-unconfirmed outfit for today (its `worn_at` becomes today, item wear logged); and a test that `check_wear_nudges` does NOT nudge a user who has a `scheduled_for == today` outfit. Run to confirm RED.
+
+Then in `backend/app/workers/notifications.py`: add `check_auto_confirm(ctx)` mirroring `check_wear_nudges`'s per-user local-time gate (reuse `get_user_now`/`wear_nudge_time`), calling `CalendarService(db).auto_confirm_due(user, local_today)` per eligible user; and add to `check_wear_nudges` an early `continue` when the user has any `Outfit` with `scheduled_for == today` (query mirrors the existing `worn_at == today` check). Register `check_auto_confirm` on the cron list in `backend/app/workers/worker.py` next to `check_wear_nudges`.
+
+- [ ] **Step 6: Run to verify it passes**
+
+Run: `bash backend/run-tests.sh tests/test_calendar.py tests/test_notification_workers.py -v`
+Expected: PASS. Then full suite: `bash backend/run-tests.sh -q`.
+
+- [ ] **Step 7: Commit**
+```bash
+git add backend/app/services/calendar_service.py backend/app/workers/notifications.py backend/app/workers/worker.py backend/tests/test_calendar.py backend/tests/test_notification_workers.py
+git commit -m "feat(calendar): silent end-of-day auto-confirm of planned outfits + nudge skips planned days"
+```
+
+---
+
 ## Final: full suite + push
 
 - [ ] **Run the whole backend suite**

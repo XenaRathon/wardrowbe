@@ -1,0 +1,193 @@
+from uuid import uuid4
+
+import pytest
+
+from app.api.auth import create_access_token
+from app.models.family import Family
+from app.models.item import ClothingItem, ItemStatus
+from app.models.user import User
+from app.schemas.item import ItemCreate
+from app.services.item_service import ItemService
+
+
+async def _user(db, fam=None) -> User:
+    u = User(
+        id=uuid4(),
+        external_id=f"ext-{uuid4()}",
+        email=f"{uuid4()}@e.com",
+        display_name="U",
+        timezone="UTC",
+        is_active=True,
+        onboarding_completed=True,
+        family_id=fam,
+    )
+    db.add(u)
+    await db.commit()
+    await db.refresh(u)
+    return u
+
+
+async def _family(db, owner: User) -> Family:
+    # created_by has a real FK to users.id, so the owning user must exist first.
+    fam = Family(id=uuid4(), name="F", created_by=owner.id, invite_code=str(uuid4())[:8])
+    db.add(fam)
+    await db.commit()
+    owner.family_id = fam.id
+    await db.commit()
+    await db.refresh(owner)
+    return fam
+
+
+class TestAssignOwnerOnCreate:
+    """Item creation (POST /api/v1/items) is a multipart/Form + required-image route,
+    so owner-assignment is exercised at the service layer directly, per the task brief."""
+
+    @pytest.mark.asyncio
+    async def test_assign_owner_to_family_member(self, db_session):
+        me = await _user(db_session)
+        fam = await _family(db_session, me)
+        her = await _user(db_session, fam.id)
+
+        item_service = ItemService(db_session)
+        item = await item_service.create(
+            user_id=me.id,
+            item_data=ItemCreate(type="jacket"),
+            image_paths={"image_path": f"test/{uuid4()}.jpg"},
+            owner_user_id=her.id,
+        )
+
+        assert item.user_id == her.id
+
+    @pytest.mark.asyncio
+    async def test_assign_owner_outside_family_rejected(self, db_session):
+        me = await _user(db_session)  # no family
+        stranger = await _user(db_session)  # different, no family
+
+        item_service = ItemService(db_session)
+
+        with pytest.raises(ValueError):
+            await item_service.create(
+                user_id=me.id,
+                item_data=ItemCreate(type="jacket"),
+                image_paths={"image_path": f"test/{uuid4()}.jpg"},
+                owner_user_id=stranger.id,
+            )
+
+
+class TestPrivacyOnCreate:
+    """is_private must be applied atomically at insert (ItemService.create), not via a
+    follow-up PATCH — otherwise there's a window where the item exists as visible to the
+    family before being made private. Exercised at the service layer for the same reason
+    as TestAssignOwnerOnCreate: POST /api/v1/items is a multipart/Form + required-image
+    route."""
+
+    @pytest.mark.asyncio
+    async def test_create_with_is_private_true_persists_private_immediately(self, db_session):
+        me = await _user(db_session)
+
+        item_service = ItemService(db_session)
+        item = await item_service.create(
+            user_id=me.id,
+            item_data=ItemCreate(type="jacket", is_private=True),
+            image_paths={"image_path": f"test/{uuid4()}.jpg"},
+        )
+
+        # Asserting immediately after create (before any update/patch call) proves
+        # is_private was set at insert time, not by a subsequent write.
+        assert item.is_private is True
+
+    @pytest.mark.asyncio
+    async def test_create_without_is_private_defaults_to_public(self, db_session):
+        me = await _user(db_session)
+
+        item_service = ItemService(db_session)
+        item = await item_service.create(
+            user_id=me.id,
+            item_data=ItemCreate(type="jacket"),
+            image_paths={"image_path": f"test/{uuid4()}.jpg"},
+        )
+
+        assert item.is_private is False
+
+
+class TestAssignOwnerAndPrivacyOnUpdate:
+    """PATCH /api/v1/items/{id} takes a plain JSON body (no image), so this is exercised
+    through the real HTTP route."""
+
+    @pytest.mark.asyncio
+    async def test_reassign_owner_and_set_private_via_update(self, db_session, client):
+        me = await _user(db_session)
+        fam = await _family(db_session, me)
+        her = await _user(db_session, fam.id)
+
+        item_service = ItemService(db_session)
+        item = await item_service.create(
+            user_id=me.id,
+            item_data=ItemCreate(type="jacket"),
+            image_paths={"image_path": f"test/{uuid4()}.jpg"},
+        )
+
+        headers = {"Authorization": f"Bearer {create_access_token(me.external_id)}"}
+        r = await client.patch(
+            f"/api/v1/items/{item.id}",
+            headers=headers,
+            json={"user_id": str(her.id), "is_private": True},
+        )
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["user_id"] == str(her.id)
+        assert body["is_private"] is True
+
+    @pytest.mark.asyncio
+    async def test_reassign_owner_outside_family_rejected_via_update(self, db_session, client):
+        me = await _user(db_session)  # no family
+        stranger = await _user(db_session)  # different, no family
+
+        item_service = ItemService(db_session)
+        item = await item_service.create(
+            user_id=me.id,
+            item_data=ItemCreate(type="jacket"),
+            image_paths={"image_path": f"test/{uuid4()}.jpg"},
+        )
+
+        headers = {"Authorization": f"Bearer {create_access_token(me.external_id)}"}
+        r = await client.patch(
+            f"/api/v1/items/{item.id}",
+            headers=headers,
+            json={"user_id": str(stranger.id)},
+        )
+
+        assert r.status_code == 400
+
+
+class TestOwnerScopeFilter:
+    @pytest.mark.asyncio
+    async def test_list_items_owner_scope_family_includes_partner_shared(self, db_session, client):
+        # NOTE: deviates from the task brief's literal snippet, which builds
+        # Family(created_by=uuid4()) with a random, non-existent user id.
+        # families.created_by has a real (immediate, non-deferred) FK to users.id
+        # (see fk_families_created_by in migrations/versions/001_initial_schema.py),
+        # so that insert would violate the FK. Using the existing _family() helper
+        # instead, which creates the owning user first, exactly as the other
+        # tests in this file already do.
+        me = await _user(db_session)
+        fam = await _family(db_session, me)
+        her = await _user(db_session, fam.id)
+        shared = ClothingItem(
+            id=uuid4(),
+            user_id=her.id,
+            image_path="x.jpg",
+            type="jacket",
+            status=ItemStatus.ready,
+            is_private=False,
+        )
+        db_session.add(shared)
+        await db_session.commit()
+        headers = {"Authorization": f"Bearer {create_access_token(me.external_id)}"}
+        mine = await client.get("/api/v1/items?owner_scope=mine", headers=headers)
+        fam_r = await client.get("/api/v1/items?owner_scope=family", headers=headers)
+        mine_ids = [i["id"] for i in mine.json()["items"]]
+        fam_ids = [i["id"] for i in fam_r.json()["items"]]
+        assert str(shared.id) not in mine_ids
+        assert str(shared.id) in fam_ids

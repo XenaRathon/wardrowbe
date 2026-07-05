@@ -336,3 +336,62 @@ class TestPromptPreRanking:
         from app.services.recommendation_service import RECOMMENDATION_PROMPT
 
         assert "pre-ranked" in RECOMMENDATION_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_candidate_pool_includes_shared_family_items(db_session):
+    from app.models.family import Family
+    from app.services.pairing_service import PairingService
+
+    owner = User(
+        id=uuid4(),
+        external_id=f"owner-{uuid4()}",
+        email=f"{uuid4()}@example.com",
+        display_name="Owner",
+        timezone="UTC",
+        is_active=True,
+        onboarding_completed=True,
+    )
+    db_session.add(owner)
+    await db_session.commit()
+
+    fam = Family(id=uuid4(), name="F", created_by=owner.id, invite_code=str(uuid4())[:8])
+    db_session.add(fam)
+    await db_session.commit()
+
+    me = User(
+        id=uuid4(),
+        external_id=f"e{uuid4()}",
+        email=f"{uuid4()}@e.com",
+        display_name="M",
+        timezone="UTC",
+        is_active=True,
+        onboarding_completed=True,
+        family_id=fam.id,
+    )
+    her = User(
+        id=uuid4(),
+        external_id=f"e{uuid4()}",
+        email=f"{uuid4()}@e.com",
+        display_name="H",
+        timezone="UTC",
+        is_active=True,
+        onboarding_completed=True,
+        family_id=fam.id,
+    )
+    db_session.add_all([me, her])
+    await db_session.commit()
+
+    hers = ClothingItem(
+        id=uuid4(),
+        user_id=her.id,
+        image_path="x.jpg",
+        type="jacket",
+        status=ItemStatus.ready,
+        is_private=False,
+    )
+    db_session.add(hers)
+    await db_session.commit()
+
+    items = await PairingService(db_session).get_available_items(me, exclude_item_id=uuid4())
+    assert any(i.id == hers.id for i in items)

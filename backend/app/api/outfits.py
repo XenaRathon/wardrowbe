@@ -6,13 +6,13 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.models.item import ClothingItem
+from app.models.item import ClothingItem, ItemHistory
 from app.models.outfit import (
     FamilyOutfitRating,
     Outfit,
@@ -21,7 +21,6 @@ from app.models.outfit import (
     UserFeedback,
 )
 from app.models.user import User
-from app.schemas.item import DEFAULT_WASH_INTERVALS
 from app.services.ai_service import AIDisabledError
 from app.services.item_service import ItemService
 from app.services.learning_service import LearningService
@@ -699,21 +698,21 @@ async def submit_feedback(
         feedback.worn_at = user_today
         for outfit_item in outfit.items:
             item = outfit_item.item
-            effective_interval = (
-                item.wash_interval
-                if item.wash_interval is not None
-                else DEFAULT_WASH_INTERVALS.get(item.type, 3)
-            )
-            await db.execute(
-                update(ClothingItem)
-                .where(ClothingItem.id == item.id)
-                .values(
-                    wear_count=ClothingItem.wear_count + 1,
-                    last_worn_at=user_today,
-                    wears_since_wash=ClothingItem.wears_since_wash + 1,
-                    needs_wash=ClothingItem.wears_since_wash + 1 >= effective_interval,
+            already = await db.execute(
+                select(ItemHistory.id).where(
+                    ItemHistory.item_id == item.id,
+                    ItemHistory.outfit_id == outfit.id,
+                    ItemHistory.worn_at == user_today,
                 )
             )
+            if already.scalar_one_or_none() is None:
+                await ItemService(db).log_wear(
+                    item,
+                    worn_at=user_today,
+                    outfit_id=outfit.id,
+                    worn_by_user_id=current_user.id,
+                    occasion=outfit.occasion,
+                )
     if request.worn_with_modifications is not None:
         feedback.worn_with_modifications = request.worn_with_modifications
     if request.modification_notes is not None:

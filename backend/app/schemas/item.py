@@ -54,6 +54,8 @@ class ItemCreate(ItemBase):
     tags: ItemTags | None = None
     colors: list[str] | None = None
     primary_color: str | None = None
+    owner_user_id: UUID | None = None
+    is_private: bool = False
 
 
 class ItemUpdate(BaseModel):
@@ -69,6 +71,8 @@ class ItemUpdate(BaseModel):
     colors: list[str] | None = None
     primary_color: str | None = None
     wash_interval: int | None = None
+    user_id: UUID | None = None
+    is_private: bool | None = None
 
 
 class ItemResponse(ItemBase):
@@ -104,6 +108,7 @@ class ItemResponse(ItemBase):
     is_archived: bool = False
     archived_at: datetime | None = None
     archive_reason: str | None = None
+    is_private: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -153,6 +158,7 @@ class ItemFilter(BaseModel):
     search: str | None = None
     sort_by: str | None = None
     sort_order: str = "desc"
+    owner_scope: str = "mine"
 
 
 class LogWearRequest(BaseModel):

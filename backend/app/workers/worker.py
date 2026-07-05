@@ -9,8 +9,10 @@ from app.models.item import ClothingItem, ItemStatus
 from app.services.ai_service import AIService
 from app.workers.db import close_db, get_db_session, init_db
 from app.workers.notifications import (
+    check_auto_confirm,
     check_scheduled_notifications,
     check_wash_reminders,
+    check_wear_nudges,
     process_scheduled_notification,
     retry_failed_notifications,
     send_notification,
@@ -67,6 +69,8 @@ class WorkerSettings:
         check_scheduled_notifications,
         process_scheduled_notification,
         check_wash_reminders,
+        check_wear_nudges,
+        check_auto_confirm,
         update_learning_profiles,
     ]
 
@@ -74,6 +78,8 @@ class WorkerSettings:
         cron(retry_failed_notifications, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(check_scheduled_notifications, minute=None),
         cron(check_wash_reminders, minute=15, hour={0, 6, 12, 18}),
+        cron(check_wear_nudges, minute={0, 15, 30, 45}),
+        cron(check_auto_confirm, minute={0, 15, 30, 45}),
         cron(update_learning_profiles, minute=30, hour=None),
         cron(recover_stale_processing_items, minute={0, 15, 30, 45}),
     ]

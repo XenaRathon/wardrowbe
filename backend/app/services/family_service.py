@@ -219,3 +219,12 @@ class FamilyService:
             )
         )
         return list(result.scalars().all())
+
+    async def get_member_ids(self, user: User) -> list[UUID]:
+        if user.family_id is None:
+            return [user.id]
+        result = await self.db.execute(
+            select(User.id).where(User.family_id == user.family_id)
+        )
+        ids = list(result.scalars().all())
+        return ids if user.id in ids else [*ids, user.id]

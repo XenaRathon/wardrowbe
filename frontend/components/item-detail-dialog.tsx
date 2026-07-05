@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { useSession } from 'next-auth/react';
 import {
   Heart,
   Pencil,
@@ -25,6 +26,8 @@ import {
   Plus,
   Star,
   ImageIcon,
+  Lock,
+  User,
 } from 'lucide-react';
 import {
   Dialog,
@@ -55,9 +58,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { toast } from 'sonner';
 import { useUpdateItem, useDeleteItem, useReanalyzeItem, useRotateImage, useRemoveBackground, useLogWash, useWashHistory, useItemWearStats, useItemWearHistory, useAddItemImage, useDeleteItemImage, useSetPrimaryImage } from '@/lib/hooks/use-items';
+import { useFamily } from '@/lib/hooks/use-family';
 import { Item, CLOTHING_TYPES, CLOTHING_COLORS } from '@/lib/types';
 import { ColorEyedropper } from '@/components/color-eyedropper';
 import { GeneratePairingsDialog } from '@/components/generate-pairings-dialog';
@@ -68,6 +73,9 @@ interface ItemDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+
+// Sentinel for "assign to me" in the owner Select (Radix Select can't use an empty-string value)
+const ME_VALUE = '__me__';
 
 // Images now use signed URLs from backend (item.image_url, item.thumbnail_url)
 
@@ -85,6 +93,8 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
     notes: '',
     favorite: false,
     wash_interval: undefined as number | undefined,
+    owner: ME_VALUE,
+    is_private: false,
   });
   const [showWashHistory, setShowWashHistory] = useState(false);
   const [showWearHistory, setShowWearHistory] = useState(false);
@@ -103,6 +113,15 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
   const addImage = useAddItemImage();
   const deleteImage = useDeleteItemImage();
   const setPrimary = useSetPrimaryImage();
+  const { data: session } = useSession();
+  const { data: family } = useFamily();
+
+  // session.user.id is the OIDC external_id, not the backend UUID used for Item.user_id /
+  // FamilyMember.id — match the current user's family member record by email instead.
+  const familyMembers = family?.members ?? [];
+  const currentMember = familyMembers.find((m) => m.email === session?.user?.email);
+  const selfId = currentMember?.id;
+  const showOwnerSelect = familyMembers.length > 1;
 
   useEffect(() => {
     if (item) {
@@ -115,16 +134,23 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
         notes: item.notes || '',
         favorite: item.favorite,
         wash_interval: item.wash_interval ?? undefined,
+        owner: item.user_id === selfId ? ME_VALUE : item.user_id,
+        is_private: item.is_private,
       });
       setIsEditing(false);
       setActiveImageIndex(0);
     }
-  }, [item?.id]);
+  }, [item?.id, selfId]);
 
   if (!item) return null;
 
   const handleSave = async () => {
     try {
+      // Only send an owner reassignment when the Owner select is actually shown; "Me" resolves
+      // to the current user's family-member id so reassigning to self is explicit, not a no-op.
+      const ownerPayload = showOwnerSelect
+        ? { user_id: editForm.owner === ME_VALUE ? selfId : editForm.owner }
+        : {};
       await updateItem.mutateAsync({
         id: item.id,
         data: {
@@ -136,6 +162,8 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
           notes: editForm.notes || undefined,
           favorite: editForm.favorite,
           wash_interval: editForm.wash_interval,
+          is_private: editForm.is_private,
+          ...ownerPayload,
         },
       });
       setIsEditing(false);
@@ -546,6 +574,40 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
                       Number of wears before this item needs washing. Leave blank for default.
                     </p>
                   </div>
+                  {showOwnerSelect && (
+                    <div className="space-y-2">
+                      <Label>Owner</Label>
+                      <Select
+                        value={editForm.owner}
+                        onValueChange={(v) => setEditForm({ ...editForm, owner: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ME_VALUE}>Me</SelectItem>
+                          {familyMembers.map((member) => (
+                            <SelectItem key={member.id} value={member.id}>
+                              {member.display_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="item-is-private">Private</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Only visible to you, hidden from family members
+                      </p>
+                    </div>
+                    <Switch
+                      id="item-is-private"
+                      checked={editForm.is_private}
+                      onCheckedChange={(checked) => setEditForm({ ...editForm, is_private: checked })}
+                    />
+                  </div>
                   <div className="flex gap-2 pt-2">
                     <Button
                       variant="outline"
@@ -577,7 +639,21 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
                       {item.subtype && (
                         <span className="text-muted-foreground">• {item.subtype}</span>
                       )}
+                      {item.is_private && (
+                        <Badge variant="outline" className="text-xs gap-1">
+                          <Lock className="h-3 w-3" />
+                          Private
+                        </Badge>
+                      )}
                     </div>
+                    {showOwnerSelect && selfId && item.user_id !== selfId && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <span>
+                          Owner: {familyMembers.find((m) => m.id === item.user_id)?.display_name || 'Family member'}
+                        </span>
+                      </div>
+                    )}
                     {item.brand && (
                       <div className="flex items-center gap-2 text-sm">
                         <Tag className="h-4 w-4 text-muted-foreground" />

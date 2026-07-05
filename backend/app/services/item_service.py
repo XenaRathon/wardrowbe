@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import attributes, selectinload
 
 from app.models.item import ClothingItem, ItemHistory, ItemStatus, WashHistory
+from app.models.user import User
 from app.schemas.item import DEFAULT_WASH_INTERVALS, ItemCreate, ItemFilter, ItemUpdate
+from app.utils.visibility import usable_items_filter
 
 
 class ItemService:
@@ -39,15 +41,22 @@ class ItemService:
 
     async def get_list(
         self,
-        user_id: UUID,
+        user: User,
         filters: ItemFilter,
         page: int = 1,
         page_size: int = 20,
+        member_ids: list[UUID] | None = None,
     ) -> tuple[list[ClothingItem], int]:
-        # Base query
+        # Base predicate: "mine" (default) is current-owner-only behaviour;
+        # "family"/"all" is the shared household pool (respects is_private).
+        if filters.owner_scope in ("family", "all"):
+            base = usable_items_filter(user, member_ids or [user.id])
+        else:
+            base = ClothingItem.user_id == user.id
+
         query = (
             select(ClothingItem)
-            .where(ClothingItem.user_id == user_id)
+            .where(base)
             .options(selectinload(ClothingItem.additional_images))
         )
 
@@ -157,20 +166,39 @@ class ItemService:
         )
         return result.scalar_one_or_none()
 
+    async def _validate_owner_in_family(self, requester_id: UUID, owner_id: UUID) -> None:
+        """Raise ValueError unless owner_id belongs to requester_id's family
+        (or is requester_id itself)."""
+        from app.models.user import User
+        from app.services.family_service import FamilyService
+
+        requester = await self.db.get(User, requester_id)
+        if requester is None:
+            raise ValueError("Owner must be a family member")
+
+        member_ids = await FamilyService(self.db).get_member_ids(requester)
+        if owner_id not in member_ids:
+            raise ValueError("Owner must be a family member")
+
     async def create(
         self,
         user_id: UUID,
         item_data: ItemCreate,
         image_paths: dict[str, str],
+        owner_user_id: UUID | None = None,
     ) -> ClothingItem:
         # Build tags dict
         tags = {}
         if item_data.tags:
             tags = item_data.tags.model_dump(exclude_none=True)
 
+        resolved_owner_id = owner_user_id if owner_user_id is not None else user_id
+        if owner_user_id is not None and owner_user_id != user_id:
+            await self._validate_owner_in_family(user_id, owner_user_id)
+
         # Create item
         item = ClothingItem(
-            user_id=user_id,
+            user_id=resolved_owner_id,
             image_path=image_paths["image_path"],
             thumbnail_path=image_paths.get("thumbnail_path"),
             medium_path=image_paths.get("medium_path"),
@@ -187,6 +215,7 @@ class ItemService:
             purchase_date=item_data.purchase_date,
             purchase_price=item_data.purchase_price,
             favorite=item_data.favorite,
+            is_private=item_data.is_private,
         )
 
         self.db.add(item)
@@ -196,6 +225,12 @@ class ItemService:
 
     async def update(self, item: ClothingItem, item_data: ItemUpdate) -> ClothingItem:
         update_data = item_data.model_dump(exclude_unset=True)
+
+        new_owner_id = update_data.get("user_id")
+        if new_owner_id is not None and new_owner_id != item.user_id:
+            # item.user_id is still the current owner (the requester, per get_by_id's
+            # ownership filter) at this point, before the field loop below reassigns it.
+            await self._validate_owner_in_family(item.user_id, new_owner_id)
 
         if "tags" in update_data and update_data["tags"]:
             tags = update_data["tags"]
@@ -250,6 +285,7 @@ class ItemService:
         occasion: str | None = None,
         notes: str | None = None,
         outfit_id: UUID | None = None,
+        worn_by_user_id: UUID | None = None,
     ) -> ItemHistory:
         # Create history entry
         history = ItemHistory(
@@ -258,6 +294,7 @@ class ItemService:
             worn_at=worn_at,
             occasion=occasion,
             notes=notes,
+            worn_by_user_id=worn_by_user_id,
         )
         self.db.add(history)
 

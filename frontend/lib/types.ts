@@ -54,6 +54,7 @@ export interface Item {
   is_archived: boolean;
   archived_at?: string;
   archive_reason?: string;
+  is_private: boolean;
   created_at: string;
   updated_at: string;
 }

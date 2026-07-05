@@ -34,7 +34,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useCreateItem, useBulkCreateItems, BulkUploadResponse } from '@/lib/hooks/use-items';
+import { Switch } from '@/components/ui/switch';
+import { useCreateItem, useUpdateItem, useBulkCreateItems, BulkUploadResponse } from '@/lib/hooks/use-items';
+import { useFamily } from '@/lib/hooks/use-family';
 import { CLOTHING_TYPES, CLOTHING_COLORS } from '@/lib/types';
 
 interface AddItemDialogProps {
@@ -48,6 +50,9 @@ interface FileWithPreview {
   id: string;
 }
 
+// Sentinel for "assign to me" in the owner Select (Radix Select can't use an empty-string value)
+const ME_VALUE = '__me__';
+
 export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   // Single upload state
   const [file, setFile] = useState<File | null>(null);
@@ -57,6 +62,8 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [brand, setBrand] = useState('');
   const [primaryColor, setPrimaryColor] = useState('');
   const [notes, setNotes] = useState('');
+  const [ownerUserId, setOwnerUserId] = useState(ME_VALUE);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   // Bulk upload state
   const [bulkFiles, setBulkFiles] = useState<FileWithPreview[]>([]);
@@ -68,7 +75,11 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const blobUrlsRef = useRef<Set<string>>(new Set());
 
   const createItem = useCreateItem();
+  const updateItem = useUpdateItem();
   const bulkCreateItems = useBulkCreateItems();
+  const { data: family } = useFamily();
+  const familyMembers = family?.members ?? [];
+  const showOwnerSelect = familyMembers.length > 1;
 
   // Cleanup blob URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -140,9 +151,19 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
     if (brand) formData.append('brand', brand);
     if (primaryColor) formData.append('primary_color', primaryColor);
     if (notes) formData.append('notes', notes);
+    if (showOwnerSelect && ownerUserId !== ME_VALUE) formData.append('owner_user_id', ownerUserId);
 
     try {
-      await createItem.mutateAsync(formData);
+      const created = await createItem.mutateAsync(formData);
+      // is_private isn't accepted by the create endpoint, so apply it as a follow-up patch
+      if (isPrivate && created?.id) {
+        try {
+          await updateItem.mutateAsync({ id: created.id, data: { is_private: true } });
+        } catch (error) {
+          console.error('Failed to mark new item as private:', error);
+          toast.error('Item created, but failed to mark it private. You can toggle it from the item details.');
+        }
+      }
       handleClose();
     } catch (error) {
       console.error('Failed to create item:', error);
@@ -191,6 +212,8 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
     setBrand('');
     setPrimaryColor('');
     setNotes('');
+    setOwnerUserId(ME_VALUE);
+    setIsPrivate(false);
 
     // Bulk upload cleanup - also clean up from the ref
     bulkFiles.forEach((f) => {
@@ -358,6 +381,35 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Any additional notes..."
                   />
+                </div>
+
+                {showOwnerSelect && (
+                  <div className="space-y-2">
+                    <Label htmlFor="owner">Owner</Label>
+                    <Select value={ownerUserId} onValueChange={setOwnerUserId}>
+                      <SelectTrigger id="owner">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ME_VALUE}>Me</SelectItem>
+                        {familyMembers.map((member) => (
+                          <SelectItem key={member.id} value={member.id}>
+                            {member.display_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="is-private">Private</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Only visible to you, hidden from family members
+                    </p>
+                  </div>
+                  <Switch id="is-private" checked={isPrivate} onCheckedChange={setIsPrivate} />
                 </div>
               </div>
 

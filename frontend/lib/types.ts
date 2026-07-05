@@ -112,6 +112,52 @@ export interface Preferences {
   ai_endpoints: AIEndpoint[];
 }
 
+// Body-type styler profile types — GET/PUT /style-profile, POST /style-profile/draft,
+// GET /style-profile/guidance. NOTE: named `StyleProfileData` (not `StyleProfile`) to avoid
+// colliding with the pre-existing `StyleProfile` sliders type above (casual/formal/etc.,
+// part of `Preferences.style_profile`) — these are two distinct concepts sharing a name
+// upstream in the task brief.
+export interface StyleProfileData {
+  measurements: Record<string, unknown>;
+  body_shape: string | null; // hourglass|pear|inverted-triangle|rectangle|apple
+  vertical_line: string | null; // petite|balanced|tall
+  frame: string | null; // small|medium|large
+  color_season: string | null; // e.g. soft-autumn, cool-winter
+  kibbe_lean: string | null; // dramatic|natural|romantic|classic|gamine
+  palette: string[];
+  season_confirmed: boolean;
+  kibbe_confirmed: boolean;
+}
+
+// PUT /style-profile body — mirrors backend's StyleProfileUpdate (all fields optional)
+export interface StyleProfileUpdate {
+  color_season?: string | null;
+  kibbe_lean?: string | null;
+  palette?: string[];
+  season_confirmed?: boolean;
+  kibbe_confirmed?: boolean;
+}
+
+// POST /style-profile/draft body — mirrors backend's StyleDraftRequest
+export interface StyleDraftRequest {
+  hints?: Record<string, unknown>;
+  image_b64?: string;
+}
+
+// POST /style-profile/draft response — advisory, unsaved AI guess
+export interface StyleDraft {
+  color_season: string | null;
+  kibbe_lean: string | null;
+}
+
+// GET /style-profile/guidance response
+export interface Guidance {
+  summary: string;
+  recommended: Record<string, string[]>;
+  avoid: Record<string, string[]>;
+  palette: string[];
+}
+
 // Color options for the app
 // Hex values tuned for typical clothing colors, not pure/saturated colors
 export const CLOTHING_COLORS = [

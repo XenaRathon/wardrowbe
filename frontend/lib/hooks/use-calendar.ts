@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { api, setAccessToken } from '@/lib/api';
 import { DayRecord } from '@/lib/types';
@@ -60,5 +60,96 @@ export function useCalendar(start: string, end: string) {
     queryKey: ['calendar', start, end],
     queryFn: () => api.get<DayRecord[]>('/calendar', { params: { start, end } }),
     enabled: !!start && !!end && status !== 'loading',
+  });
+}
+
+// Shared invalidation for mutations that change a day's plan/wear state:
+// the calendar grid, item wear counters (needs_wash etc.), and analytics
+// all derive from wear events.
+function invalidateCalendarAndWearDerived(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['calendar'] });
+  queryClient.invalidateQueries({ queryKey: ['items'] });
+  queryClient.invalidateQueries({ queryKey: ['analytics'] });
+}
+
+export function usePlanDay() {
+  const queryClient = useQueryClient();
+  const { data: session } = useSession();
+
+  return useMutation({
+    mutationFn: async ({ date, outfitId }: { date: string; outfitId: string }) => {
+      if (session?.accessToken) {
+        setAccessToken(session.accessToken as string);
+      }
+      return api.post<DayRecord>(`/calendar/${date}/plan`, { outfit_id: outfitId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar'] });
+    },
+  });
+}
+
+export function useConfirmDay() {
+  const queryClient = useQueryClient();
+  const { data: session } = useSession();
+
+  return useMutation({
+    mutationFn: async (date: string) => {
+      if (session?.accessToken) {
+        setAccessToken(session.accessToken as string);
+      }
+      return api.post<DayRecord>(`/calendar/${date}/confirm`);
+    },
+    onSuccess: () => {
+      invalidateCalendarAndWearDerived(queryClient);
+    },
+  });
+}
+
+export function useLogWear() {
+  const queryClient = useQueryClient();
+  const { data: session } = useSession();
+
+  return useMutation({
+    mutationFn: async ({
+      date,
+      outfitId,
+      wornByUserId,
+      occasion,
+    }: {
+      date: string;
+      outfitId: string;
+      wornByUserId?: string;
+      occasion?: string;
+    }) => {
+      if (session?.accessToken) {
+        setAccessToken(session.accessToken as string);
+      }
+      return api.post<DayRecord>(`/calendar/${date}/wear`, {
+        outfit_id: outfitId,
+        worn_by_user_id: wornByUserId,
+        occasion,
+      });
+    },
+    onSuccess: () => {
+      invalidateCalendarAndWearDerived(queryClient);
+    },
+  });
+}
+
+export function useRemoveWear() {
+  const queryClient = useQueryClient();
+  const { data: session } = useSession();
+
+  return useMutation({
+    mutationFn: async ({ date, outfitId }: { date: string; outfitId: string }) => {
+      if (session?.accessToken) {
+        setAccessToken(session.accessToken as string);
+      }
+      return api.delete<DayRecord>(`/calendar/${date}/wear/${outfitId}`);
+    },
+    onSuccess: () => {
+      invalidateCalendarAndWearDerived(queryClient);
+    },
   });
 }

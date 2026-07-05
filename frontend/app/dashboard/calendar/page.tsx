@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DayCell } from '@/components/calendar/day-cell';
+import { DayDetailDialog } from '@/components/calendar/day-detail-dialog';
 import { useCalendar, weekRange, monthRange } from '@/lib/hooks/use-calendar';
 import { cn } from '@/lib/utils';
 import type { DayRecord } from '@/lib/types';
@@ -40,6 +41,8 @@ function formatHeading(anchor: Date, view: ViewMode): string {
 export default function CalendarPage() {
   const [view, setView] = useState<ViewMode>('week');
   const [anchor, setAnchor] = useState<Date>(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const range = useMemo(
     () => (view === 'week' ? weekRange(anchor) : monthRange(anchor)),
@@ -68,8 +71,8 @@ export default function CalendarPage() {
   };
 
   const handleSelect = (date: string) => {
-    // Task 3 wires up the day-detail dialog here.
-    void date;
+    setSelectedDate(date);
+    setDetailOpen(true);
   };
 
   return (
@@ -158,6 +161,8 @@ export default function CalendarPage() {
           ))}
         </div>
       )}
+
+      <DayDetailDialog date={selectedDate} open={detailOpen} onOpenChange={setDetailOpen} />
     </div>
   );
 }

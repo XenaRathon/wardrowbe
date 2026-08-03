@@ -56,6 +56,7 @@
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
+  <a href="#languages">Languages</a> •
   <a href="#deployment">Deployment</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#contributing">Contributing</a>
@@ -87,6 +88,24 @@ Self-hosted wardrobe management with AI-powered outfit recommendations. Take pho
 - **Analytics** - See what you wear, what you don't, color distribution
 - **Fully self-hosted** - Your data stays on your hardware
 - **Works with any AI** - OpenAI, Ollama, LocalAI, or any OpenAI-compatible API
+- **8 languages** - English, Chinese (Simplified & Traditional), Korean, Japanese, French, German, Italian
+
+## Languages
+
+Wardrowbe's UI is fully translated into 8 languages via `next-intl`. Pick a language from Settings, or let it follow your browser automatically.
+
+| Language | Locale code |
+|----------|-------------|
+| English | `en` |
+| 中文简体 (Chinese, Simplified) | `zh-CN` |
+| 中文繁體 (Chinese, Traditional) | `zh-TW` |
+| 한국어 (Korean) | `ko` |
+| 日本語 (Japanese) | `ja` |
+| Français (French) | `fr` |
+| Deutsch (German) | `de` |
+| Italiano (Italian) | `it` |
+
+Want to add a language or improve a translation? See [Internationalization](CONTRIBUTING.md#internationalization) in the contributing guide.
 
 ## Screenshots
 
@@ -352,6 +371,8 @@ See the [k8s/](k8s/) directory for Kubernetes manifests including:
 |----------|-------------|----------|
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
 | `SECRET_KEY` | Backend secret for JWT | Yes |
+| `PUID` | Uid the app process runs as (default: 1000 backend/worker, 1001 frontend) | No |
+| `PGID` | Gid the app process runs as (default: 1000 backend/worker, 1001 frontend) | No |
 | `NEXTAUTH_SECRET` | NextAuth session encryption | Yes |
 | `AI_BASE_URL` | AI service URL | Yes |
 | `AI_API_KEY` | AI API key (if required) | Depends |
@@ -610,21 +631,16 @@ If you're still stuck:
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## Star History
-
-<a href="https://www.star-history.com/?repos=Anyesh%2Fwardrowbe&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Anyesh/wardrowbe&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Anyesh/wardrowbe&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Anyesh/wardrowbe&type=date&legend=top-left" />
- </picture>
-</a>
- 
 ## Support
 
 If you find wardrowbe useful, consider supporting its development:
 
 <a href="https://buymeacoffee.com/anyesh"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me A Coffee"></a>
+
+Thanks to our supporters:
+
+- [@aaratisharma-star](https://github.com/aaratisharma-star)
+- [@zkhcohen](https://github.com/zkhcohen)
 
 ## License
 

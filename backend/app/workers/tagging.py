@@ -5,14 +5,37 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from arq import Retry
+from sqlalchemy import select, update
 
 from app.config import get_settings
-from app.models.item import ClothingItem, ItemStatus
+from app.models.item import ClothingItem, ItemStatus, TaggedBy, TaggingStatus
+from app.models.preference import UserPreference
 from app.services.ai_service import AIService, ClothingTags
 from app.workers.db import get_db_session
 
 logger = logging.getLogger(__name__)
+
+TAGGING_MAX_TRIES = 3
+
+
+class ItemVanishedError(Exception):
+    """The item row is not visible to this worker's connection.
+
+    Almost always means the producing request has not committed yet, so the job
+    must be retried rather than dropped: returning here would leave the item
+    stuck in `processing` until the stale sweep condemns it.
+    """
+
+
+def _is_final_attempt(ctx: dict) -> bool:
+    return int(ctx.get("job_try") or 1) >= TAGGING_MAX_TRIES
+
+
+def retry_delay_seconds(ctx: dict) -> int:
+    # Exponential, so a provider that is rate limiting or restarting gets room to
+    # recover instead of being hit again immediately.
+    return min(2 ** int(ctx.get("job_try") or 1) * 5, 120)
 
 
 def tags_to_item_fields(tags: ClothingTags, raw_response: str | None = None) -> dict[str, Any]:
@@ -57,6 +80,9 @@ def tags_to_item_fields(tags: ClothingTags, raw_response: str | None = None) -> 
         # worker (app/workers/retag.py) doesn't re-process a freshly-tagged
         # item that already went through the current prompt/attribute set.
         "cut_attrs_checked_at": datetime.now(UTC),
+        "tagging_status": TaggingStatus.tagged,
+        "tagged_by": TaggedBy.auto,
+        "tagged_at": datetime.now(UTC),
     }
     if raw_response:
         fields["ai_raw_response"] = {"raw_text": raw_response}
@@ -70,22 +96,27 @@ async def mark_item_tagging_skipped(ctx: dict, item_id: str) -> None:
         item = result.scalar_one_or_none()
         if item and item.status == ItemStatus.processing:
             item.status = ItemStatus.ready
+            item.tagging_status = TaggingStatus.pending
             await db.commit()
     finally:
         await db.close()
 
 
 async def update_item_status_to_error(ctx: dict, item_id: str, error_msg: str) -> None:
-    """Update item status to error in database."""
     try:
         db = get_db_session(ctx)
         try:
-            result = await db.execute(select(ClothingItem).where(ClothingItem.id == UUID(item_id)))
-            item = result.scalar_one_or_none()
-            if item:
-                item.status = ItemStatus.error
-                item.ai_raw_response = {"error": error_msg}
-                await db.commit()
+            # Guarded: only flip status if still processing, because an orphaned job
+            # (worker crash, or a job the user already cancelled) must not un-ready or
+            # re-error an item the user has already moved past.
+            await db.execute(
+                update(ClothingItem)
+                .where(
+                    ClothingItem.id == UUID(item_id), ClothingItem.status == ItemStatus.processing
+                )
+                .values(status=ItemStatus.error, ai_raw_response={"error": error_msg})
+            )
+            await db.commit()
         finally:
             await db.close()
     except Exception as e:
@@ -128,20 +159,21 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
             # Get the item to find user_id
             result = await db.execute(select(ClothingItem).where(ClothingItem.id == UUID(item_id)))
             item = result.scalar_one_or_none()
-            if item:
-                item_image_path = item.image_path
-                # Get user's preferences for AI endpoints
-                from app.models.preference import UserPreference
+            if item is None:
+                raise ItemVanishedError(f"Item {item_id} not visible to worker")
+            item_image_path = item.image_path
+            # Get user's preferences for AI endpoints
+            from app.models.preference import UserPreference
 
-                pref_result = await db.execute(
-                    select(UserPreference).where(UserPreference.user_id == item.user_id)
+            pref_result = await db.execute(
+                select(UserPreference).where(UserPreference.user_id == item.user_id)
+            )
+            prefs = pref_result.scalar_one_or_none()
+            if prefs and prefs.ai_endpoints:
+                ai_endpoints = prefs.ai_endpoints
+                logger.info(
+                    f"Using {len(ai_endpoints)} custom AI endpoints for user {item.user_id}"
                 )
-                prefs = pref_result.scalar_one_or_none()
-                if prefs and prefs.ai_endpoints:
-                    ai_endpoints = prefs.ai_endpoints
-                    logger.info(
-                        f"Using {len(ai_endpoints)} custom AI endpoints for user {item.user_id}"
-                    )
         finally:
             await db.close()
 
@@ -177,13 +209,18 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
             item = result.scalar_one_or_none()
 
             if item is None:
-                logger.error(f"Item not found: {item_id}")
-                return {"status": "error", "error": "Item not found"}
+                raise ItemVanishedError(f"Item {item_id} not visible to worker")
 
+            # Unguarded by design: worst case after a cancel this backfills tags onto an
+            # item the user already moved past, which is harmless (unlike the error path).
             # Update item fields - only update if user hasn't already set a value
             # Always update: ai_processed, ai_confidence, status, ai_raw_response
             # Conditionally update: type, subtype, primary_color, colors, pattern, material, style, formality, season
             ai_fields = tags_to_item_fields(tags, tags.raw_response)
+            # Snapshotted once: applying tagging_status before tagged_by/tagged_at in the
+            # same loop would otherwise make the guard for the later two fields see the
+            # already-updated status and skip them even outside of a race.
+            was_pending = item.tagging_status == TaggingStatus.pending
 
             for field, value in ai_fields.items():
                 # Always update AI metadata fields (including tags JSONB and description)
@@ -197,6 +234,9 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
                     "cut_attrs_checked_at",
                 ):
                     setattr(item, field, value)
+                elif field in ("tagging_status", "tagged_by", "tagged_at"):
+                    if was_pending:
+                        setattr(item, field, value)
                 # Only update content fields if user hasn't set them (or they're default/unknown)
                 elif field == "type":
                     if not item.type or item.type == "unknown":
@@ -233,5 +273,10 @@ async def tag_item_image(ctx: dict, item_id: str, image_path: str) -> dict[str, 
     except Exception as e:
         error_msg = str(e)
         logger.exception(f"Error tagging item {item_id}: {error_msg}")
-        await update_item_status_to_error(ctx, item_id, error_msg)
-        return {"status": "error", "error": error_msg}
+        # Returning normally here made max_tries dead: arq books a returned value
+        # as success. arq only reschedules on Retry, so a plain re-raise would
+        # surface the failure but still never retry.
+        if _is_final_attempt(ctx):
+            await update_item_status_to_error(ctx, item_id, error_msg)
+            raise
+        raise Retry(defer=retry_delay_seconds(ctx)) from e

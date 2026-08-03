@@ -20,16 +20,22 @@ from app.workers.notifications import (
 )
 from app.workers.retag import check_retag_backfill
 from app.workers.settings import get_redis_settings
-from app.workers.tagging import tag_item_image
+from app.workers.tagging import TAGGING_MAX_TRIES, tag_item_image
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
 
+def stale_processing_cutoff_seconds() -> int:
+    # Must exceed job_timeout, because a job that is still running has not yet
+    # had a chance to write its own terminal status. A shorter cutoff condemns
+    # live jobs, and the user then retries an item that is still being worked on.
+    return WorkerSettings.job_timeout + 120
+
+
 async def recover_stale_processing_items(ctx: dict) -> None:
-    timeout = settings.ai_timeout * settings.ai_max_retries + 120
-    cutoff = datetime.now(UTC) - timedelta(seconds=timeout)
+    cutoff = datetime.now(UTC) - timedelta(seconds=stale_processing_cutoff_seconds())
     db = get_db_session(ctx)
     try:
         result = await db.execute(
@@ -94,7 +100,8 @@ class WorkerSettings:
 
     max_jobs = 1  # serial: the single-GPU Ollama (qwen3.5:4b vision) wedges under concurrent calls
     job_timeout = max(get_settings().ai_timeout * get_settings().ai_max_retries + 60, 600)
-    max_tries = 3
+    max_tries = TAGGING_MAX_TRIES
     health_check_interval = 30
+    allow_abort_jobs = True
 
     queue_name = "arq:tagging"

@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { cn } from '@/lib/utils'
+import { describe, it, expect, vi } from 'vitest'
+import { cn, chunkArray, formatWornAgo } from '@/lib/utils'
+
+const mockT = vi.fn((key: string, params?: Record<string, unknown>) =>
+  params ? `${key}:${JSON.stringify(params)}` : key
+)
 
 describe('cn utility', () => {
   it('should merge class names', () => {
@@ -41,5 +45,83 @@ describe('cn utility', () => {
       'visible': true,
     })
     expect(result).toBe('active visible')
+  })
+})
+
+describe('formatWornAgo', () => {
+  const dateStrInTimezone = (timezone: string, offsetDays = 0) => {
+    const d = new Date();
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const date = new Date(d);
+    date.setDate(date.getDate() + offsetDays);
+    return formatter.format(date);
+  };
+
+  it('should return "wornAgo.today" when days is 0', () => {
+    const dateStr = dateStrInTimezone('UTC');
+    mockT.mockClear()
+    const result = formatWornAgo(dateStr, 'UTC', mockT)
+    expect(result).toBe('wornAgo.today')
+    expect(mockT).toHaveBeenCalledWith('wornAgo.today')
+  })
+
+  it('should return "wornAgo.yesterday" when days is 1', () => {
+    const dateStr = dateStrInTimezone('UTC', -1);
+    mockT.mockClear()
+    const result = formatWornAgo(dateStr, 'UTC', mockT)
+    expect(result).toBe('wornAgo.yesterday')
+    expect(mockT).toHaveBeenCalledWith('wornAgo.yesterday')
+  })
+
+  it('should return "wornAgo.daysAgo" with days param when days > 1', () => {
+    const dateStr = dateStrInTimezone('UTC', -5);
+    mockT.mockClear()
+    const result = formatWornAgo(dateStr, 'UTC', mockT)
+    expect(result).toBe('wornAgo.daysAgo:{"days":5}')
+    expect(mockT).toHaveBeenCalledWith('wornAgo.daysAgo', { days: 5 })
+  })
+
+  it('should use default translation function when t is not provided', () => {
+    const dateStr = dateStrInTimezone('UTC');
+    const result = formatWornAgo(dateStr)
+    expect(result).toBe('wornAgo.today')
+  })
+})
+
+describe('chunkArray utility', () => {
+  it('should split items evenly across chunks', () => {
+    const result = chunkArray([1, 2, 3, 4], 2)
+    expect(result).toEqual([[1, 2], [3, 4]])
+  })
+
+  it('should put remainder items in a final smaller chunk', () => {
+    const result = chunkArray([1, 2, 3, 4, 5], 2)
+    expect(result).toEqual([[1, 2], [3, 4], [5]])
+  })
+
+  it('should return a single chunk when items fit within size', () => {
+    const result = chunkArray([1, 2, 3], 20)
+    expect(result).toEqual([[1, 2, 3]])
+  })
+
+  it('should return an empty array for empty input', () => {
+    const result = chunkArray([], 20)
+    expect(result).toEqual([])
+  })
+
+  it('should not lose or duplicate items across many chunks', () => {
+    const items = Array.from({ length: 45 }, (_, i) => i)
+    const result = chunkArray(items, 20)
+    expect(result).toEqual([
+      items.slice(0, 20),
+      items.slice(20, 40),
+      items.slice(40, 45),
+    ])
+    expect(result.flat()).toEqual(items)
   })
 })

@@ -3,7 +3,9 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { List as ListIcon, CalendarDays, Plus, Search } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { List as ListIcon, CalendarDays, Plus, Search, CheckSquare } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,9 +14,12 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OutfitCard } from '@/components/outfits/outfit-card';
 import { OutfitCalendar } from '@/components/outfit-calendar';
+import { BulkActionToolbar, BulkSelection } from '@/components/bulk-action-toolbar';
 import {
+  useBulkDeleteOutfits,
   useCalendarOutfits,
   useOutfits,
+  type BulkOutfitOperationParams,
   type Outfit,
   type OutfitFilters,
 } from '@/lib/hooks/use-outfits';
@@ -88,13 +93,22 @@ const CHIP_ORDER: FilterChip[] = [
   'ai',
 ];
 
-const CHIP_LABELS: Record<FilterChip, string> = {
-  all: 'All',
-  'my-looks': 'My Looks',
-  worn: 'Worn',
-  pairings: 'Pairings',
-  replacements: 'Replacements',
-  ai: 'AI',
+const CHIP_KEYS: Record<FilterChip, string> = {
+  all: 'filters.all',
+  'my-looks': 'filters.lookbook',
+  worn: 'filters.worn',
+  pairings: 'filters.pairings',
+  replacements: 'filters.replacements',
+  ai: 'filters.ai',
+};
+
+const EMPTY_KEYS: Record<FilterChip, string> = {
+  all: 'empty.all',
+  'my-looks': 'empty.myLooks',
+  worn: 'empty.worn',
+  pairings: 'empty.pairings',
+  replacements: 'empty.replacements',
+  ai: 'empty.ai',
 };
 
 function chipToFilters(chip: FilterChip, search: string): OutfitFilters {
@@ -123,16 +137,9 @@ function chipToFilters(chip: FilterChip, search: string): OutfitFilters {
   }
 }
 
-const EMPTY_MESSAGES: Record<FilterChip, string> = {
-  all: 'No outfits yet. Create your first look in the Studio!',
-  'my-looks': 'No saved looks yet. Create one with the Studio editor.',
-  worn: 'No worn outfits recorded.',
-  pairings: 'No pairing outfits generated.',
-  replacements: 'No replacement outfits.',
-  ai: 'No AI-generated outfits.',
-};
-
 function OutfitsPageContent() {
+  const t = useTranslations('outfits');
+  const tc = useTranslations('common');
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawFilter = (searchParams.get('filter') as FilterChip) || 'all';
@@ -149,6 +156,12 @@ function OutfitsPageContent() {
   const [defaultChecked, setDefaultChecked] = useState(false);
   const [monthRef, setMonthRef] = useState<MonthRef>(urlMonth ?? currentMonthRef());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selection, setSelection] = useState<BulkSelection>({
+    mode: 'none',
+    selectedIds: new Set(),
+    excludedIds: new Set(),
+  });
 
   useEffect(() => {
     if (urlMonth && (urlMonth.year !== monthRef.year || urlMonth.month !== monthRef.month)) {
@@ -167,6 +180,18 @@ function OutfitsPageContent() {
   );
 
   const listQuery = useOutfits(filters, page, 24);
+  const bulkDeleteOutfits = useBulkDeleteOutfits();
+
+  // Clear selection when filters change (but not page - allow cross-page selection)
+  useEffect(() => {
+    setSelection({ mode: 'none', selectedIds: new Set(), excludedIds: new Set() });
+  }, [chip, debouncedSearch]);
+
+  useEffect(() => {
+    if (view === 'calendar') {
+      setSelectMode(false);
+    }
+  }, [view]);
 
   const calendarQuery = useCalendarOutfits(
     monthRef.year,
@@ -283,24 +308,100 @@ function OutfitsPageContent() {
     : [];
 
   const outfits = listQuery.data?.outfits ?? [];
+  const total = listQuery.data?.total ?? 0;
   const hasMore = listQuery.data?.has_more ?? false;
   const listLoading = listQuery.isLoading;
   const listError = listQuery.isError;
   const calendarLoading = calendarQuery.isLoading;
   const calendarError = calendarQuery.isError;
 
+  const handleToggleSelectMode = () => {
+    setSelectMode((prev) => {
+      if (prev) {
+        setSelection({ mode: 'none', selectedIds: new Set(), excludedIds: new Set() });
+      }
+      return !prev;
+    });
+  };
+
+  const handleSelect = (id: string, checked: boolean) => {
+    setSelection((prev) => {
+      if (prev.mode === 'all') {
+        const next = new Set(prev.excludedIds);
+        if (checked) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return { ...prev, excludedIds: next };
+      }
+      const next = new Set(prev.selectedIds);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return { mode: next.size > 0 ? 'some' : 'none', selectedIds: next, excludedIds: new Set() };
+    });
+  };
+
+  const handleSelectPage = () => {
+    setSelection((prev) => {
+      const pageFullySelected =
+        (prev.mode === 'all' && prev.excludedIds.size === 0) ||
+        (prev.mode === 'some' && prev.selectedIds.size === outfits.length && outfits.length > 0);
+      if (pageFullySelected) {
+        return { mode: 'none', selectedIds: new Set(), excludedIds: new Set() };
+      }
+      return { mode: 'some', selectedIds: new Set(outfits.map((o) => o.id)), excludedIds: new Set() };
+    });
+  };
+
+  const handleSelectAllMatching = () => {
+    setSelection({ mode: 'all', selectedIds: new Set(), excludedIds: new Set() });
+  };
+
+  const handleClearSelection = () => {
+    setSelection({ mode: 'none', selectedIds: new Set(), excludedIds: new Set() });
+  };
+
+  const getBulkParams = (): BulkOutfitOperationParams => {
+    if (selection.mode === 'all') {
+      return {
+        select_all: true,
+        excluded_ids: Array.from(selection.excludedIds),
+        filters,
+      };
+    }
+    return { outfit_ids: Array.from(selection.selectedIds) };
+  };
+
+  const handleBulkDelete = async () => {
+    const params = getBulkParams();
+    try {
+      const result = await bulkDeleteOutfits.mutateAsync(params);
+      toast.success(t('bulkActions.deleteSuccess', { count: result.deleted }));
+      if (result.failed > 0) {
+        toast.error(t('bulkActions.deletePartialFailed', { count: result.failed }));
+      }
+      handleClearSelection();
+    } catch {
+      toast.error(t('bulkActions.deleteError'));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Outfits</h1>
-          <p className="text-muted-foreground">Your looks, worn outfits, and AI suggestions</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+          <p className="text-muted-foreground">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <div
             className="inline-flex rounded-full border-2 border-muted overflow-hidden"
             role="group"
-            aria-label="View toggle"
+            aria-label={t('viewToggle')}
           >
             <button
               type="button"
@@ -314,7 +415,7 @@ function OutfitsPageContent() {
               )}
             >
               <ListIcon className="h-3.5 w-3.5" />
-              List
+              {t('viewList')}
             </button>
             <button
               type="button"
@@ -328,13 +429,22 @@ function OutfitsPageContent() {
               )}
             >
               <CalendarDays className="h-3.5 w-3.5" />
-              Calendar
+              {t('viewCalendar')}
             </button>
           </div>
+          {view === 'list' && (
+            <Button
+              variant={selectMode ? 'secondary' : 'outline'}
+              onClick={handleToggleSelectMode}
+            >
+              <CheckSquare className="h-4 w-4 mr-2" />
+              {selectMode ? tc('cancel') : t('bulkActions.select')}
+            </Button>
+          )}
           <Button asChild>
             <Link href="/dashboard/outfits/new">
               <Plus className="h-4 w-4 mr-2" />
-              New Outfit
+              {t('newOutfit')}
             </Link>
           </Button>
         </div>
@@ -355,7 +465,7 @@ function OutfitsPageContent() {
                   : 'border-muted bg-background hover:border-muted-foreground/50',
               )}
             >
-              {CHIP_LABELS[c]}
+              {t(CHIP_KEYS[c])}
             </button>
           ))}
         </div>
@@ -364,7 +474,7 @@ function OutfitsPageContent() {
           <div className="relative ml-auto min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search lookbook..."
+              placeholder={t('search')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-9"
@@ -374,7 +484,7 @@ function OutfitsPageContent() {
 
         {listQuery.data && (
           <Badge variant="outline" className="ml-auto">
-            {listQuery.data.total} total
+            {t('totalCount', { count: listQuery.data.total })}
           </Badge>
         )}
       </div>
@@ -383,7 +493,7 @@ function OutfitsPageContent() {
       {view === 'list' ? (
         <>
           {listError ? (
-            <div className="text-center py-8 text-destructive">Failed to load outfits</div>
+            <div className="text-center py-8 text-destructive">{t('loadError')}</div>
           ) : listLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -392,12 +502,12 @@ function OutfitsPageContent() {
             </div>
           ) : outfits.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-              <p className="text-muted-foreground mb-6 max-w-sm">{EMPTY_MESSAGES[chip]}</p>
+              <p className="text-muted-foreground mb-6 max-w-sm">{t(EMPTY_KEYS[chip])}</p>
               {chip === 'my-looks' && (
                 <Button asChild>
                   <Link href="/dashboard/outfits/new">
                     <Plus className="h-4 w-4 mr-2" />
-                    New Outfit
+                    {t('newOutfit')}
                   </Link>
                 </Button>
               )}
@@ -405,14 +515,25 @@ function OutfitsPageContent() {
           ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {outfits.map((outfit) => (
-                  <OutfitCard key={outfit.id} outfit={outfit} />
-                ))}
+                {outfits.map((outfit) => {
+                  const isSelected = selection.mode === 'all'
+                    ? !selection.excludedIds.has(outfit.id)
+                    : selection.selectedIds.has(outfit.id);
+                  return (
+                    <OutfitCard
+                      key={outfit.id}
+                      outfit={outfit}
+                      selectMode={selectMode}
+                      selected={isSelected}
+                      onSelect={handleSelect}
+                    />
+                  );
+                })}
               </div>
               {hasMore && (
                 <div className="flex justify-center pt-4">
                   <Button variant="outline" onClick={() => setPage((p) => p + 1)}>
-                    Load more
+                    {t('loadMore')}
                   </Button>
                 </div>
               )}
@@ -453,7 +574,7 @@ function OutfitsPageContent() {
 
           <div className="space-y-4">
             {calendarError ? (
-              <div className="text-center py-8 text-destructive">Failed to load outfits</div>
+              <div className="text-center py-8 text-destructive">{t('loadError')}</div>
             ) : calendarLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -464,7 +585,7 @@ function OutfitsPageContent() {
               <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
                 <CalendarDays className="h-8 w-8 text-muted-foreground mb-2" />
                 <p className="text-sm text-muted-foreground">
-                  No outfits on this day
+                  {t('calendar.noOutfitsOnDay')}
                 </p>
               </div>
             ) : (
@@ -475,13 +596,13 @@ function OutfitsPageContent() {
                       {formatReadableDate(selectedDate)}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      {selectedDayOutfits.length} outfit{selectedDayOutfits.length === 1 ? '' : 's'}
+                      {t('calendar.outfitCount', { count: selectedDayOutfits.length })}
                     </p>
                   </div>
                 )}
                 {!selectedDate && (
                   <p className="text-sm text-muted-foreground">
-                    {calendarOutfits.length} outfit{calendarOutfits.length === 1 ? '' : 's'} this month
+                    {t('calendar.monthlyCount', { count: calendarOutfits.length })}
                   </p>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -493,6 +614,23 @@ function OutfitsPageContent() {
             )}
           </div>
         </div>
+      )}
+
+      {selectMode && (
+        <BulkActionToolbar
+          selection={selection}
+          totalItems={total}
+          pageItems={outfits.length}
+          onSelectAll={handleSelectPage}
+          onSelectAllMatching={handleSelectAllMatching}
+          onClear={handleClearSelection}
+          onDelete={handleBulkDelete}
+          isDeleting={bulkDeleteOutfits.isPending}
+          variant="outfits"
+          page={page}
+          pageSize={24}
+          onPageChange={setPage}
+        />
       )}
     </div>
   );

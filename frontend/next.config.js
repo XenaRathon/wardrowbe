@@ -1,3 +1,5 @@
+const createNextIntlPlugin = require('next-intl/plugin');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -15,16 +17,10 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  async rewrites() {
-    // Use backend hostname for server-side requests (Docker network)
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000';
-    return [
-      {
-        source: '/api/v1/:path*',
-        destination: `${backendUrl}/api/v1/:path*`,
-      },
-    ];
-  },
+  // /api/v1/* is proxied by app/api/v1/[...path]/route.ts rather than a rewrite here, because
+  // rewrites() is serialized into routes-manifest.json at build time and so cannot honor a
+  // runtime BACKEND_URL in the prebuilt image.
 };
 
-module.exports = nextConfig;
+const withNextIntl = createNextIntlPlugin();
+module.exports = withNextIntl(nextConfig);

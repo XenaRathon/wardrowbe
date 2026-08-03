@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import json
@@ -15,6 +16,8 @@ from app.config import get_settings
 from app.utils.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
+
+AI_RETRY_MAX_BACKOFF_S = 30
 
 
 class TextGenerationResult(BaseModel):
@@ -197,6 +200,10 @@ def compute_tag_completeness(tags: "ClothingTags") -> float:
     if tags.colors:
         score += 0.05
     return round(score, 2)
+
+
+def _response_rejects_logprobs(response: httpx.Response) -> bool:
+    return response.status_code == 400 and "logprobs" in response.text.lower()
 
 
 _CONFIDENCE_FIELDS = {"type", "primary_color", "pattern", "material", "formality"}
@@ -485,9 +492,11 @@ class AIService:
         for endpoint in self._endpoints:
             logger.info(f"Trying AI endpoint for {task_name}: {endpoint.name}")
             model = endpoint.vision_model if use_vision_model else endpoint.text_model
+            use_logprobs = request_logprobs
 
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-                for attempt in range(self.settings.ai_max_retries):
+                attempt = 0
+                while attempt < self.settings.ai_max_retries:
                     try:
                         # Native Ollama /api/chat with think disabled. qwen3.5 is a reasoning
                         # model: on the OpenAI /v1 endpoint it loops in <think> until it hits
@@ -539,15 +548,32 @@ class AIService:
                         return content, None, logprobs_content
 
                     except httpx.HTTPStatusError as e:
+                        # Some providers (e.g. Gemini's OpenAI-compat endpoint, or Gemini
+                        # native without the paid tier) reject the logprobs param outright.
+                        # Retry the same attempt without it instead of burning the retry
+                        # budget or losing the tags entirely - this doesn't count against
+                        # ai_max_retries since it's a capability mismatch, not a transient
+                        # failure.
+                        if use_logprobs and _response_rejects_logprobs(e.response):
+                            logger.warning(
+                                f"{endpoint.name} rejected logprobs for {task_name}, "
+                                f"retrying without it: {e}"
+                            )
+                            use_logprobs = False
+                            continue
                         last_error = e
                         logger.warning(f"HTTP error from {endpoint.name}: {e}")
-                        if attempt < self.settings.ai_max_retries - 1:
-                            continue
                     except httpx.RequestError as e:
                         last_error = e
                         logger.warning(f"Request error from {endpoint.name}: {e}")
-                        if attempt < self.settings.ai_max_retries - 1:
-                            continue
+
+                    attempt += 1
+                    if attempt < self.settings.ai_max_retries:
+                        # Without this the retries fire back to back in milliseconds,
+                        # so a rate-limited or restarting endpoint is hit three times
+                        # in the same instant and the user's manual retry reproduces
+                        # the identical failure.
+                        await asyncio.sleep(min(2**attempt, AI_RETRY_MAX_BACKOFF_S))
 
         return None, last_error, None
 
@@ -712,7 +738,33 @@ class AIService:
 
                         data = response.json()
                         used_model = data.get("model", endpoint.text_model)
-                        content = data["choices"][0]["message"]["content"]
+                        choice = data["choices"][0]
+                        message = choice["message"]
+                        content = message.get("content")
+
+                        if not content or not content.strip():
+                            finish_reason = choice.get("finish_reason")
+                            reasoning = message.get("reasoning_content")
+                            if finish_reason == "length" and reasoning:
+                                detail = (
+                                    "its reasoning/thinking output consumed the entire "
+                                    "completion token budget before it produced a response"
+                                )
+                            elif finish_reason == "length":
+                                detail = "the response was cut off before any content was generated"
+                            else:
+                                detail = f"finish_reason={finish_reason!r}"
+                            last_error = AIResponseTruncatedError(
+                                f"{endpoint.name} (model: {used_model}) returned an empty "
+                                f"response: {detail}. Try raising AI_MAX_TOKENS (currently "
+                                f"{self.settings.ai_max_tokens}) or disabling extended "
+                                "thinking/reasoning mode for this model."
+                            )
+                            logger.warning(str(last_error))
+                            if attempt < self.settings.ai_max_retries - 1:
+                                continue
+                            break
+
                         logger.info(
                             f"Text generation successful via {endpoint.name} (model: {used_model})"
                         )
@@ -739,6 +791,19 @@ class AIService:
         if last_error:
             raise last_error
         raise RuntimeError("Failed to generate text - no endpoints available")
+
+
+class AIResponseTruncatedError(RuntimeError):
+    """Raised when a model's response was cut off before it produced any output content.
+
+    Reasoning-capable models (e.g. Qwen3, DeepSeek-R1) return their chain-of-thought in a
+    separate ``reasoning_content`` field, distinct from ``content``. If that reasoning
+    consumes the entire completion token budget, the API reports ``finish_reason ==
+    "length"`` with an empty ``content`` string. Downstream JSON parsing of an empty
+    string then fails with an unhelpful message, which used to get swallowed into a
+    generic "AI service is not available" error even though the endpoint responded
+    successfully. This error preserves the real cause so callers can surface it.
+    """
 
 
 class AIDisabledError(RuntimeError):

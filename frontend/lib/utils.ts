@@ -5,6 +5,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function chunkArray<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 /**
  * Get today's date in a specific timezone.
  * Returns a Date object representing midnight in the given timezone.
@@ -60,12 +69,18 @@ export function getDaysSinceDateInTimezone(dateStr: string, timezone: string = '
 
 /**
  * Format a "worn X days ago" message based on a date string and user's timezone.
+ * Accepts a translation function for i18n support.
  */
-export function formatWornAgo(dateStr: string, timezone: string = 'UTC'): string {
+export function formatWornAgo(
+  dateStr: string,
+  timezone: string = 'UTC',
+  t: (key: string, params?: Record<string, string | number | Date>) => string = (key, params) =>
+    params ? `${key}:${JSON.stringify(params)}` : key
+): string {
   const days = getDaysSinceDateInTimezone(dateStr, timezone);
-  if (days === 0) return 'Worn today';
-  if (days === 1) return 'Worn yesterday';
-  return `Worn ${days}d ago`;
+  if (days === 0) return t('wornAgo.today');
+  if (days === 1) return t('wornAgo.yesterday');
+  return t('wornAgo.daysAgo', { days });
 }
 
 /**

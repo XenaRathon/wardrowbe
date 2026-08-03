@@ -5,6 +5,76 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0](https://github.com/Anyesh/wardrowbe/compare/wardrowbe-v1.6.0...wardrowbe-v1.7.0) (2026-07-30)
+
+
+### ✨ Features
+
+* add next-intl internationalization with 4 locales ([be2668f](https://github.com/Anyesh/wardrowbe/commit/be2668f9b326ddfaaa45ecb2aad9195fd74b4bc5))
+* **backend:** persist user locale ([a1878d3](https://github.com/Anyesh/wardrowbe/commit/a1878d3bb07258ca1285dc1334d5c082d49e120b))
+* **i18n:** restructure keys onto feature namespaces and ship 8 locales ([eaf47b3](https://github.com/Anyesh/wardrowbe/commit/eaf47b3dffb64fa430f2ead21ed1d2f7f7c3850e))
+* **outfits:** add bulk-delete endpoint ([0db1be2](https://github.com/Anyesh/wardrowbe/commit/0db1be23417cad87d28fa498bac9d5bf409c41ff))
+* **outfits:** add bulk-select/delete to outfits page, rename lookbook filter chip ([ea9f2c6](https://github.com/Anyesh/wardrowbe/commit/ea9f2c69decadb5f6e16f7e27ac1989bfbfe21e8))
+
+
+### 🐛 Bug Fixes
+
+* **frontend:** restore missing [@emnapi](https://github.com/emnapi) entries in package-lock.json ([58740db](https://github.com/Anyesh/wardrowbe/commit/58740db6f33b4ecbdd074a552205d3110625454b))
+* **frontend:** sync package-lock.json with package.json ([8ce97d0](https://github.com/Anyesh/wardrowbe/commit/8ce97d0d47e6f9803fbe3b83c75b7700899ecd6f))
+* **i18n:** translate defaultOccasion label in 6 locales ([6c92599](https://github.com/Anyesh/wardrowbe/commit/6c9259975146e9ec6be616b36583995d9f35c1cf))
+* **outfits:** relabel Reject to Dismiss ([c54fd57](https://github.com/Anyesh/wardrowbe/commit/c54fd57e6713a48cf5a6d944c61a96fafdd9bf25))
+
+
+### 📝 Documentation
+
+* replace star history with supporters list ([0ba2f77](https://github.com/Anyesh/wardrowbe/commit/0ba2f77bb1dc72ac1ee04bc55354994cdd50a2ec))
+
+
+### 👷 CI/CD
+
+* gate translation coverage ([6a87d29](https://github.com/Anyesh/wardrowbe/commit/6a87d298b9b489f62eb0373cfc939f99362615e2))
+
+## [1.6.0](https://github.com/Anyesh/wardrowbe/compare/wardrowbe-v1.5.1...wardrowbe-v1.6.0) (2026-07-25)
+
+
+### ✨ Features
+
+* add custom User-Agent header to JWKS client ([#134](https://github.com/Anyesh/wardrowbe/issues/134)) ([c18fa75](https://github.com/Anyesh/wardrowbe/commit/c18fa75a8fa70342466b7c84bf8cefbd0e4a51a7))
+* defer item tagging to an external agent (phase 2) ([c63ced9](https://github.com/Anyesh/wardrowbe/commit/c63ced9caf4d4241fe53f7b164a886e45979547c))
+
+
+### 🐛 Bug Fixes
+
+* retry AI tagging without logprobs when the provider rejects it ([2fbf38f](https://github.com/Anyesh/wardrowbe/commit/2fbf38fe2d0f3811edef385fabe4b168ee12e84e))
+* retry AI tagging without logprobs when the provider rejects it ([b39815d](https://github.com/Anyesh/wardrowbe/commit/b39815d52c666be445b6feb52d7f1f51abedefa3))
+* surface real cause when outfit suggestion AI response is truncated ([#139](https://github.com/Anyesh/wardrowbe/issues/139)) ([#142](https://github.com/Anyesh/wardrowbe/issues/142)) ([7af8472](https://github.com/Anyesh/wardrowbe/commit/7af84720f1f6932d61fde8504edcf4b281f350fa))
+
+## [1.5.1](https://github.com/Anyesh/wardrowbe/compare/wardrowbe-v1.5.0...wardrowbe-v1.5.1) (2026-07-17)
+
+
+### 🐛 Bug Fixes
+
+* [#124](https://github.com/Anyesh/wardrowbe/issues/124) fix prod compose file well ([3cded21](https://github.com/Anyesh/wardrowbe/commit/3cded21db36b877ef2a0a90815a620be2cc4bdf5))
+* keep honoring NEXT_PUBLIC_API_URL when resolving the backend ([#124](https://github.com/Anyesh/wardrowbe/issues/124)) ([d8cca73](https://github.com/Anyesh/wardrowbe/commit/d8cca73dd5c20315e2d7d256b112663b84894c11))
+* proxy /api/v1 through a route handler so BACKEND_URL applies ([#124](https://github.com/Anyesh/wardrowbe/issues/124)) ([2fff9c3](https://github.com/Anyesh/wardrowbe/commit/2fff9c399e0feae14266c36a1afb5ff46c437207))
+
+## [1.5.0](https://github.com/Anyesh/wardrowbe/compare/wardrowbe-v1.4.0...wardrowbe-v1.5.0) (2026-07-16)
+
+
+### ✨ Features
+
+* add page-size control and scope select-all to current page ([#127](https://github.com/Anyesh/wardrowbe/issues/127)) ([7430a4f](https://github.com/Anyesh/wardrowbe/commit/7430a4f910a65d6db810a5381f362e91f902694f))
+* allow bulk upload without forced AI analysis ([#128](https://github.com/Anyesh/wardrowbe/issues/128)) ([7984e26](https://github.com/Anyesh/wardrowbe/commit/7984e26f4fa233a1a40d95805e74e6444ffa2bc6))
+* allow cancelling AI analysis on processing items ([#95](https://github.com/Anyesh/wardrowbe/issues/95)) ([05f3578](https://github.com/Anyesh/wardrowbe/commit/05f357808d55a74de1394b5ec36cf5472370ba21))
+* support PUID/PGID overrides on app containers ([#123](https://github.com/Anyesh/wardrowbe/issues/123)) ([14674cb](https://github.com/Anyesh/wardrowbe/commit/14674cbbfd79e371b08d9761f02542aafe040cc3))
+* undo background removal and replace primary image ([#126](https://github.com/Anyesh/wardrowbe/issues/126)) ([c1c10b2](https://github.com/Anyesh/wardrowbe/commit/c1c10b2803b90104d5323ef112e66f786af75baa))
+
+
+### 🐛 Bug Fixes
+
+* allow overriding backend URL for renamed compose services ([#124](https://github.com/Anyesh/wardrowbe/issues/124)) ([2a813d6](https://github.com/Anyesh/wardrowbe/commit/2a813d60d711aa31c45ae7c024f1389b345be170))
+* chunk bulk uploads so batches over the limit no longer fail ([#125](https://github.com/Anyesh/wardrowbe/issues/125)) ([a4df578](https://github.com/Anyesh/wardrowbe/commit/a4df578b187b0343eff5091c49b7e02b76ec0546))
+
 ## [1.4.0](https://github.com/Anyesh/wardrowbe/compare/wardrowbe-v1.3.1...wardrowbe-v1.4.0) (2026-07-01)
 
 

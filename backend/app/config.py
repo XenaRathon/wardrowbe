@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     # Storage
     storage_path: str = Field(default="/data/wardrobe")
     max_upload_size_mb: int = Field(default=10)
+    max_bulk_upload_count: int = Field(default=20)
 
     # Background removal
     auto_remove_background: bool = Field(default=True)  # auto-run bg removal before AI tagging on new uploads
@@ -134,7 +135,7 @@ class Settings(BaseSettings):
             )
 
         oidc_configured = oidc_issuer and oidc_client
-        is_dev = self.debug and self.secret_key == DEFAULT_SECRET_KEY
+        is_dev = self.debug and not oidc_configured
         if not oidc_configured and not is_dev:
             return (
                 "No authentication method configured. "
@@ -144,10 +145,10 @@ class Settings(BaseSettings):
         return None
 
     def get_auth_mode(self) -> str:
-        if self.debug and self.secret_key == DEFAULT_SECRET_KEY:
-            return "dev"
         if self.oidc_issuer_url and self.oidc_client_id:
             return "oidc"
+        if self.debug:
+            return "dev"
         return "unknown"
 
     def get_geocoding_user_agent(self) -> str:

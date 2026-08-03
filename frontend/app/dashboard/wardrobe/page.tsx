@@ -27,22 +27,30 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AddItemDialog } from '@/components/add-item-dialog';
 import { ItemDetailDialog } from '@/components/item-detail-dialog';
 import { BulkActionToolbar, BulkSelection } from '@/components/bulk-action-toolbar';
-import { useItems, useItem, useItemTypes, useReanalyzeItem, useBulkDeleteItems, useBulkReanalyzeItems, BulkOperationParams } from '@/lib/hooks/use-items';
+import { useItems, useItem, useItemTypes, useReanalyzeItem, useCancelAnalysis, useBulkDeleteItems, useBulkReanalyzeItems, useTaggingProgress, BulkOperationParams } from '@/lib/hooks/use-items';
 import { useUserProfile } from '@/lib/hooks/use-user';
 import { useFamily } from '@/lib/hooks/use-family';
 import { CLOTHING_TYPES, CLOTHING_COLORS, Item } from '@/lib/types';
 import { toast } from 'sonner';
 import { formatWornAgo, getWornAgoColorClass } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 const SORT_OPTIONS = [
-  { label: 'Newest first', value: 'created_at', order: 'desc' as const },
-  { label: 'Oldest first', value: 'created_at', order: 'asc' as const },
-  { label: 'Recently worn', value: 'last_worn', order: 'desc' as const },
-  { label: 'Least recently worn', value: 'last_worn', order: 'asc' as const },
-  { label: 'Most worn', value: 'wear_count', order: 'desc' as const },
-  { label: 'Least worn', value: 'wear_count', order: 'asc' as const },
-  { label: 'Name A–Z', value: 'name', order: 'asc' as const },
-  { label: 'Name Z–A', value: 'name', order: 'desc' as const },
+  { value: 'created_at', order: 'desc' as const },
+  { value: 'created_at', order: 'asc' as const },
+  { value: 'last_worn', order: 'desc' as const },
+  { value: 'last_worn', order: 'asc' as const },
+  { value: 'wear_count', order: 'desc' as const },
+  { value: 'wear_count', order: 'asc' as const },
+  { value: 'name', order: 'asc' as const },
+  { value: 'name', order: 'desc' as const },
+] as const;
+
+const SORT_LABEL_KEYS = [
+  'newestFirst', 'oldestFirst', 'recentlyWorn', 'leastRecentlyWorn',
+  'mostWorn', 'leastWorn', 'nameAZ', 'nameZA',
 ] as const;
 
 function ItemCard({
@@ -50,19 +58,27 @@ function ItemCard({
   selected,
   onSelect,
   onRetry,
+  onCancelAnalysis,
   onClick,
+  onDismissError,
+  errorDismissed,
   userTimezone,
 }: {
   item: Item;
   selected: boolean;
   onSelect: (id: string, checked: boolean) => void;
   onRetry?: (id: string) => void;
+  onCancelAnalysis?: (id: string) => void;
   onClick?: () => void;
+  onDismissError?: (id: string) => void;
+  errorDismissed?: boolean;
   userTimezone: string;
 }) {
+  const t = useTranslations('wardrobe');
+  const tc = useTranslations('common');
   const colorInfo = CLOTHING_COLORS.find((c) => c.value === item.primary_color);
   const isProcessing = item.status === 'processing';
-  const isError = item.status === 'error';
+  const isError = item.status === 'error' && !errorDismissed;
 
   const handleCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -109,7 +125,7 @@ function ItemCard({
         )}
         {item.needs_wash && (
           <div className="absolute bottom-2 right-2 z-10">
-            <div className="bg-amber-500/90 text-white rounded-full p-1" title="Needs washing">
+            <div className="bg-amber-500/90 text-white rounded-full p-1" title={t('needsWash')}>
               <Droplets className="h-3.5 w-3.5" />
             </div>
           </div>
@@ -117,27 +133,65 @@ function ItemCard({
         {isProcessing && (
           <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2">
             <Loader2 className="h-6 w-6 text-white animate-spin" />
-            <span className="text-white text-xs font-medium">AI Analyzing...</span>
-          </div>
-        )}
-        {isError && (
-          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 p-2">
-            <AlertCircle className="h-6 w-6 text-red-400" />
-            <span className="text-white text-xs font-medium text-center">Analysis Failed</span>
-            {onRetry && (
+            <span className="text-white text-xs font-medium">{t('ai.analyzing')}</span>
+            {onCancelAnalysis && (
               <Button
                 size="sm"
                 variant="secondary"
                 className="h-7 text-xs"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onRetry(item.id);
+                  onCancelAnalysis(item.id);
                 }}
               >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Retry
+                <X className="h-3 w-3 mr-1" />
+                {tc('cancel')}
               </Button>
             )}
+          </div>
+        )}
+        {isError && (
+          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 p-2">
+            <AlertCircle className="h-6 w-6 text-red-400" />
+            <span className="text-white text-xs font-medium text-center">{t('ai.analysisFailed')}</span>
+            {item.ai_error && (
+              <span
+                className="text-white/70 text-[10px] text-center line-clamp-2 px-1"
+                title={item.ai_error}
+              >
+                {item.ai_error}
+              </span>
+            )}
+            <div className="flex gap-1.5">
+              {onRetry && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRetry(item.id);
+                  }}
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  {tc('retry')}
+                </Button>
+              )}
+              {onDismissError && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 w-7 p-0"
+                  title={t('ai.dismiss')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDismissError(item.id);
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -150,7 +204,7 @@ function ItemCard({
             <p className="text-xs text-muted-foreground capitalize">
               {item.type}
               {item.subtype && ` • ${item.subtype}`}
-              {item.tags?.logprobs_confidence != null && ` · ${Math.round(item.tags.logprobs_confidence * 100)}% confident`}
+              {item.tags?.logprobs_confidence != null && ` · ${t('ai.confident', { percent: Math.round(item.tags.logprobs_confidence * 100) })}`}
             </p>
           </div>
           {colorInfo && (
@@ -171,16 +225,16 @@ function ItemCard({
         </div>
         {item.last_worn_at ? (
           <p className={`text-xs mt-1 ${getWornAgoColorClass(item.last_worn_at, userTimezone)}`}>
-            {formatWornAgo(item.last_worn_at, userTimezone)}
+            {formatWornAgo(item.last_worn_at, userTimezone, t)}
           </p>
         ) : item.wear_count > 0 ? (
           <p className="text-xs text-muted-foreground mt-1">
-            Worn {item.wear_count} time{item.wear_count !== 1 ? 's' : ''}
+            {t('wearCount', { count: item.wear_count })}
           </p>
         ) : null}
         {item.ai_confidence !== undefined && item.ai_confidence > 0 && item.status === 'ready' && (
           <p className="text-xs text-muted-foreground mt-1">
-            AI completeness: {Math.round(item.ai_confidence * 100)}%
+            {t('ai.completeness', { percent: Math.round(item.ai_confidence * 100) })}
           </p>
         )}
       </CardContent>
@@ -201,19 +255,20 @@ function ItemCardSkeleton() {
 }
 
 function EmptyWardrobe({ onAddClick }: { onAddClick: () => void }) {
+  const t = useTranslations('wardrobe');
+
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
       <div className="rounded-full bg-muted p-6 mb-4">
         <Grid3X3 className="h-12 w-12 text-muted-foreground" />
       </div>
-      <h3 className="text-lg font-semibold mb-2">Your wardrobe is empty</h3>
+      <h3 className="text-lg font-semibold mb-2">{t('empty.title')}</h3>
       <p className="text-muted-foreground mb-6 max-w-sm">
-        Add your first clothing item to start getting personalized outfit
-        suggestions.
+        {t('empty.description')}
       </p>
       <Button onClick={onAddClick}>
         <Plus className="mr-2 h-4 w-4" />
-        Add First Item
+        {t('empty.addFirstItem')}
       </Button>
     </div>
   );
@@ -226,6 +281,8 @@ export default function WardrobePage() {
   const userTimezone = userProfile?.timezone || 'UTC';
   const { data: family } = useFamily();
   const hasSharedFamily = (family?.members?.length ?? 0) > 1;
+  const t = useTranslations('wardrobe');
+  const tc = useTranslations('common');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selection, setSelection] = useState<BulkSelection>({
     mode: 'none',
@@ -233,14 +290,48 @@ export default function WardrobePage() {
     excludedIds: new Set(),
   });
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [sortIndex, setSortIndex] = useState(0);
-  const [needsWash, setNeedsWash] = useState<boolean | undefined>(undefined);
-  const [favoriteFilter, setFavoriteFilter] = useState<boolean | undefined>(undefined);
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
+  const [typeFilter, setTypeFilter] = useState<string>(() => searchParams.get('type') ?? 'all');
+  const [sortIndex, setSortIndex] = useState(() => {
+    const raw = Number(searchParams.get('sort'));
+    return Number.isInteger(raw) && raw >= 0 && raw < SORT_OPTIONS.length ? raw : 0;
+  });
+  const [needsWash, setNeedsWash] = useState<boolean | undefined>(() =>
+    searchParams.get('needsWash') === 'true' ? true : undefined
+  );
+  const [favoriteFilter, setFavoriteFilter] = useState<boolean | undefined>(() =>
+    searchParams.get('favorite') === 'true' ? true : undefined
+  );
   const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    const raw = Number(searchParams.get('page'));
+    return Number.isInteger(raw) && raw > 0 ? raw : 1;
+  });
+  const [pageSize, setPageSize] = useState(() => {
+    const raw = Number(searchParams.get('pageSize'));
+    return PAGE_SIZE_OPTIONS.includes(raw) ? raw : 20;
+  });
   const [ownerScope, setOwnerScope] = useState<'mine' | 'family'>('mine');
+  const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = window.sessionStorage.getItem('wardrobe-dismissed-errors');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        'wardrobe-dismissed-errors',
+        JSON.stringify(Array.from(dismissedErrors))
+      );
+    } catch {
+      // because sessionStorage can be unavailable (private browsing, quota), dismissal just won't persist
+    }
+  }, [dismissedErrors]);
 
   // Open item detail dialog from URL param (e.g. ?item=uuid from outfit pages)
   useEffect(() => {
@@ -249,6 +340,24 @@ export default function WardrobePage() {
       setDetailItemId(itemParam);
     }
   }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep filters/page/sort in the URL so a refresh or shared link preserves them
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (search) params.set('search', search); else params.delete('search');
+    if (typeFilter !== 'all') params.set('type', typeFilter); else params.delete('type');
+    if (sortIndex !== 0) params.set('sort', String(sortIndex)); else params.delete('sort');
+    if (needsWash) params.set('needsWash', 'true'); else params.delete('needsWash');
+    if (favoriteFilter) params.set('favorite', 'true'); else params.delete('favorite');
+    if (page !== 1) params.set('page', String(page)); else params.delete('page');
+    if (pageSize !== 20) params.set('pageSize', String(pageSize)); else params.delete('pageSize');
+
+    const next = params.toString();
+    if (next !== searchParams.toString()) {
+      router.replace(next ? `/dashboard/wardrobe?${next}` : '/dashboard/wardrobe', { scroll: false });
+    }
+  }, [search, typeFilter, sortIndex, needsWash, favoriteFilter, page, pageSize, searchParams, router]);
 
   const sortOption = SORT_OPTIONS[sortIndex];
 
@@ -270,9 +379,11 @@ export default function WardrobePage() {
   ].filter(Boolean).length;
 
   // Fetch items with automatic polling (faster when items are processing)
-  const { data, isLoading, error } = useItems(filters, page, 20);
+  const { data, isLoading, error } = useItems(filters, page, pageSize);
+  const { data: taggingProgress } = useTaggingProgress();
   const { data: itemTypes } = useItemTypes();
   const reanalyze = useReanalyzeItem();
+  const cancelAnalysis = useCancelAnalysis();
   const bulkDelete = useBulkDeleteItems();
   const bulkReanalyze = useBulkReanalyzeItems();
 
@@ -284,9 +395,16 @@ export default function WardrobePage() {
   const { data: fetchedItem } = useItem(detailItemId && !listItem ? detailItemId : '');
   const detailItem = listItem || fetchedItem || null;
 
-  // Count items being processed or with errors
-  const processingCount = items.filter((i) => i.status === 'processing').length;
-  const errorCount = items.filter((i) => i.status === 'error').length;
+  // Wardrobe-wide, from the server: counting the current page only capped the
+  // badge at the page size, so a 100-image upload still read "20 analyzing".
+  const processingCount = taggingProgress?.processing ?? 0;
+  const errorCount = items.filter(
+    (i) => i.status === 'error' && !dismissedErrors.has(`${i.id}:${i.updated_at}`)
+  ).length;
+  const taggedTotal = taggingProgress?.total ?? 0;
+  const taggedDone = taggingProgress?.completed ?? 0;
+  const percentComplete =
+    taggedTotal > 0 ? Math.round((taggedDone / taggedTotal) * 100) : 0;
 
   // Clear selection when filters change (but not page - allow cross-page selection)
   useEffect(() => {
@@ -295,6 +413,16 @@ export default function WardrobePage() {
 
   const handleRetry = (itemId: string) => {
     reanalyze.mutate(itemId);
+  };
+
+  const handleCancelAnalysis = (itemId: string) => {
+    cancelAnalysis.mutate(itemId);
+  };
+
+  const handleDismissError = (itemId: string) => {
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+    setDismissedErrors((prev) => new Set(prev).add(`${item.id}:${item.updated_at}`));
   };
 
   const handleSelect = (id: string, checked: boolean) => {
@@ -321,16 +449,20 @@ export default function WardrobePage() {
     });
   };
 
-  const handleSelectAll = () => {
+  const handleSelectPage = () => {
     setSelection((prev) => {
-      if (prev.mode === 'all' && prev.excludedIds.size === 0) {
-        // Already all selected, clear
+      const pageFullySelected =
+        (prev.mode === 'all' && prev.excludedIds.size === 0) ||
+        (prev.mode === 'some' && prev.selectedIds.size === items.length && items.length > 0);
+      if (pageFullySelected) {
         return { mode: 'none', selectedIds: new Set(), excludedIds: new Set() };
-      } else {
-        // Select all
-        return { mode: 'all', selectedIds: new Set(), excludedIds: new Set() };
       }
+      return { mode: 'some', selectedIds: new Set(items.map((i) => i.id)), excludedIds: new Set() };
     });
+  };
+
+  const handleSelectAllMatching = () => {
+    setSelection({ mode: 'all', selectedIds: new Set(), excludedIds: new Set() });
   };
 
   const handleClearSelection = () => {
@@ -362,13 +494,13 @@ export default function WardrobePage() {
     const params = getBulkParams();
     try {
       const result = await bulkDelete.mutateAsync(params);
-      toast.success(`Deleted ${result.deleted} items`);
+      toast.success(t('bulkActions.deleteSuccess', { count: result.deleted }));
       if (result.failed > 0) {
-        toast.error(`Failed to delete ${result.failed} items`);
+        toast.error(t('bulkActions.deletePartialFailed', { count: result.failed }));
       }
       handleClearSelection();
     } catch {
-      toast.error('Failed to delete items');
+      toast.error(t('bulkActions.deleteError'));
     }
   };
 
@@ -377,16 +509,16 @@ export default function WardrobePage() {
     try {
       const result = await bulkReanalyze.mutateAsync(params);
       if (result.queued > 20) {
-        toast.success(`Queued ${result.queued} items for re-analysis. This may take a while.`);
+        toast.success(t('bulkActions.reanalyzeMany', { count: result.queued }));
       } else {
-        toast.success(`Queued ${result.queued} items for re-analysis`);
+        toast.success(t('bulkActions.reanalyzeQueued', { count: result.queued }));
       }
       if (result.failed > 0) {
-        toast.error(`Failed to queue ${result.failed} items`);
+        toast.error(t('bulkActions.reanalyzePartialFailed', { count: result.failed }));
       }
       handleClearSelection();
     } catch {
-      toast.error('Failed to queue items for re-analysis');
+      toast.error(t('bulkActions.reanalyzeError'));
     }
   };
 
@@ -399,26 +531,28 @@ export default function WardrobePage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center justify-between sm:justify-start gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">My Wardrobe</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
             <Button onClick={() => setAddDialogOpen(true)} className="sm:hidden" size="sm">
               <Plus className="h-4 w-4" />
             </Button>
           </div>
           <p className="text-sm text-muted-foreground">
-            {total} item{total !== 1 ? 's' : ''} in your wardrobe
+            {t('itemCount', { count: total })}
           </p>
           {(processingCount > 0 || errorCount > 0) && (
             <div className="flex items-center gap-2 mt-2">
               {processingCount > 0 && (
                 <Badge variant="secondary" className="gap-1 text-xs">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  {processingCount} analyzing
+                  {taggedTotal > 0
+                    ? t('ai.analyzingProgress', { count: processingCount, percent: percentComplete })
+                    : t('ai.analyzingCount', { count: processingCount })}
                 </Badge>
               )}
               {errorCount > 0 && (
                 <Badge variant="destructive" className="gap-1 text-xs">
                   <AlertCircle className="h-3 w-3" />
-                  {errorCount} failed
+                  {t('ai.failedCount', { count: errorCount })}
                 </Badge>
               )}
             </div>
@@ -426,7 +560,7 @@ export default function WardrobePage() {
         </div>
         <Button onClick={() => setAddDialogOpen(true)} className="hidden sm:flex">
           <Plus className="mr-2 h-4 w-4" />
-          Add Item
+          {t('actions.addItem')}
         </Button>
       </div>
 
@@ -451,7 +585,7 @@ export default function WardrobePage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search items..."
+              placeholder={t('search')}
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -475,7 +609,7 @@ export default function WardrobePage() {
               <SelectContent>
                 {SORT_OPTIONS.map((opt, i) => (
                   <SelectItem key={i} value={String(i)}>
-                    {opt.label}
+                    {t(`sort.${SORT_LABEL_KEYS[i]}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -507,13 +641,32 @@ export default function WardrobePage() {
               }}
             >
               <SelectTrigger className="w-[150px] h-8 text-xs">
-                <SelectValue placeholder="All types" />
+                <SelectValue placeholder={t('allTypes')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                {CLOTHING_TYPES.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>
-                    {t.label}
+                <SelectItem value="all">{t('allTypes')}</SelectItem>
+                {CLOTHING_TYPES.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => {
+                setPageSize(Number(value));
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[130px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {t('pageSize', { count: size })}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -529,7 +682,7 @@ export default function WardrobePage() {
               }}
             >
               <Droplets className="h-3.5 w-3.5" />
-              Needs wash
+              {t('needsWash')}
             </Button>
 
             <Button
@@ -542,7 +695,7 @@ export default function WardrobePage() {
               }}
             >
               <Heart className="h-3.5 w-3.5" />
-              Favorites
+              {t('favorites')}
             </Button>
 
             {activeFilterCount > 0 && (
@@ -558,7 +711,7 @@ export default function WardrobePage() {
                 }}
               >
                 <X className="h-3 w-3" />
-                Clear filters
+                {t('clearFilters')}
               </Button>
             )}
           </div>
@@ -568,14 +721,14 @@ export default function WardrobePage() {
       {error ? (
         <div className="text-center py-8">
           <p className="text-destructive">
-            Failed to load items. Please try again.
+            {t('errors.loadFailed')}
           </p>
           <Button
             variant="outline"
             className="mt-4"
             onClick={() => window.location.reload()}
           >
-            Retry
+            {tc('retry')}
           </Button>
         </div>
       ) : isLoading ? (
@@ -588,7 +741,7 @@ export default function WardrobePage() {
         search || typeFilter !== 'all' || needsWash !== undefined || favoriteFilter !== undefined ? (
           <div className="text-center py-8">
             <p className="text-muted-foreground">
-              No items found matching your filters.
+              {t('errors.noItemsFound')}
             </p>
             <Button
               variant="outline"
@@ -598,9 +751,10 @@ export default function WardrobePage() {
                 setTypeFilter('all');
                 setNeedsWash(undefined);
                 setFavoriteFilter(undefined);
+                setPage(1);
               }}
             >
-              Clear Filters
+              {t('errors.clearFilters')}
             </Button>
           </div>
         ) : (
@@ -620,7 +774,10 @@ export default function WardrobePage() {
                 selected={isSelected}
                 onSelect={handleSelect}
                 onRetry={handleRetry}
+                onCancelAnalysis={handleCancelAnalysis}
                 onClick={() => setDetailItemId(item.id)}
+                onDismissError={handleDismissError}
+                errorDismissed={dismissedErrors.has(`${item.id}:${item.updated_at}`)}
                 userTimezone={userTimezone}
               />
             );
@@ -632,14 +789,16 @@ export default function WardrobePage() {
         selection={selection}
         totalItems={total}
         pageItems={items.length}
-        onSelectAll={handleSelectAll}
+        onSelectAll={handleSelectPage}
+        onSelectAllMatching={handleSelectAllMatching}
         onClear={handleClearSelection}
         onDelete={handleBulkDelete}
         onReanalyze={handleBulkReanalyze}
         isDeleting={bulkDelete.isPending}
         isReanalyzing={bulkReanalyze.isPending}
+        variant="items"
         page={page}
-        pageSize={20}
+        pageSize={pageSize}
         onPageChange={handlePageChange}
       />
 
@@ -650,9 +809,12 @@ export default function WardrobePage() {
         onOpenChange={(open) => {
           if (!open) {
             setDetailItemId(null);
-            // Clear the ?item= param from URL without navigation
+            // Clear only the ?item= param, keep filters/page/sort intact
             if (searchParams.has('item')) {
-              router.replace('/dashboard/wardrobe', { scroll: false });
+              const params = new URLSearchParams(searchParams.toString());
+              params.delete('item');
+              const next = params.toString();
+              router.replace(next ? `/dashboard/wardrobe?${next}` : '/dashboard/wardrobe', { scroll: false });
             }
           }
         }}

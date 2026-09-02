@@ -75,7 +75,7 @@ Edit `configmap.yaml` with your domain and AI settings:
 data:
   APP_URL: "https://wardrobe.example.com"
   NEXTAUTH_URL: "https://wardrobe.example.com"
-  AI_BASE_URL: "https://api.openai.com/v1"  # Or your Ollama/LocalAI URL
+  AI_BASE_URL: "https://api.openai.com/v1" # Or your Ollama/LocalAI URL
 ```
 
 Apply config:
@@ -95,6 +95,11 @@ kubectl -n wardrobe get pods -w
 ```
 
 ### 5. Deploy Application
+
+`backend.yaml`, `worker.yaml`, and `frontend.yaml` reference placeholder images
+(`wardrobe/backend:latest`, `wardrobe/frontend:latest`) that don't exist in any public registry —
+point them at real images first, either the project's published multi-arch (amd64/arm64) builds
+or your own. See [Container Images](#container-images) below.
 
 ```bash
 kubectl apply -f backend.yaml
@@ -135,22 +140,37 @@ kubectl apply -f network-policy.yaml
 
 ## Files
 
-| File | Description |
-|------|-------------|
-| `namespace.yaml` | Namespace definition |
-| `configmap.yaml` | Non-sensitive configuration |
-| `secrets.yaml.template` | Template for secrets |
-| `secrets.yaml` | Your secrets (DO NOT commit!) |
-| `postgres.yaml` | PostgreSQL database + PVC |
-| `redis.yaml` | Redis for job queue + PVC |
-| `backend.yaml` | FastAPI backend + PVC |
-| `worker.yaml` | arq background worker |
-| `frontend.yaml` | Next.js frontend |
-| `ingress.yaml` | Ingress configuration |
-| `network-policy.yaml` | Network isolation rules |
-| `kustomization.yaml` | Kustomize configuration |
+| File                    | Description                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `namespace.yaml`        | Namespace definition                                                            |
+| `configmap.yaml`        | Non-sensitive configuration                                                     |
+| `secrets.yaml.template` | Template for the `wardrobe-secrets` and `wardrobe-notifications` Secret objects |
+| `secrets.yaml`          | Your secrets (DO NOT commit!)                                                   |
+| `postgres.yaml`         | PostgreSQL database + PVC                                                       |
+| `redis.yaml`            | Redis for job queue + PVC                                                       |
+| `backend.yaml`          | FastAPI backend + PVC                                                           |
+| `worker.yaml`           | arq background worker                                                           |
+| `frontend.yaml`         | Next.js frontend                                                                |
+| `ingress.yaml`          | Ingress configuration                                                           |
+| `network-policy.yaml`   | Network isolation rules                                                         |
+| `kustomization.yaml`    | Kustomize configuration                                                         |
 
 ## Configuration
+
+### Container Images
+
+`backend.yaml`, `worker.yaml`, and `frontend.yaml` ship with placeholder image references
+(`wardrobe/backend:latest`, `wardrobe/frontend:latest`) — replace them before deploying:
+
+- **Use the published images** (same ones the Docker Compose deployment pulls): set the image to
+  `ghcr.io/anyesh/wardrowbe:backend-latest` / `ghcr.io/anyesh/wardrowbe:frontend-latest`, or pin to
+  a release, e.g. `ghcr.io/anyesh/wardrowbe:backend-1.3.0`. Both are published multi-arch
+  (`linux/amd64` and `linux/arm64`).
+- **Build your own**: build `./backend` and `./frontend` (see the root
+  [README's build pipeline notes](../README.md)), push to a registry your cluster can pull from,
+  and point the manifests at that image instead.
+
+`worker.yaml` reuses the backend image (it runs the same codebase as an arq worker process).
 
 ### AI Service
 
@@ -167,6 +187,24 @@ AI_BASE_URL: "http://ollama:11434/v1"
 # LocalAI
 AI_BASE_URL: "http://localai:8080/v1"
 ```
+
+`AI_TIMEOUT` (seconds the backend waits for one LLM response) and `AI_MAX_RETRIES` are also set
+in `configmap.yaml`; slow local models often need `AI_TIMEOUT=300` or more.
+
+Internal AI is optional. `AI_INTERNAL_ENABLED: "false"` runs the backend with no internal AI
+provider at all, deferring tagging/suggestions/pairings to an external agent. With internal AI on,
+`AI_VISION_ENABLED` and `AI_TEXT_ENABLED` can each be disabled individually; unset values inherit
+the master switch. Check the effective state at `GET /api/v1/capabilities`.
+
+### Notifications (Optional)
+
+- **ntfy.sh**: set `NTFY_SERVER` / `NTFY_TOPIC` in `configmap.yaml`, and `ntfy-token` in the
+  `wardrobe-notifications` secret if your topic requires auth.
+- **Email**: set `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL` in
+  `configmap.yaml`, and `smtp-user` / `smtp-password` in the `wardrobe-notifications` secret.
+
+See `configmap.yaml` for the full, current set of keys — `LOG_LEVEL`, `AUTH_TRUST_HEADER`, and
+`OIDC_MOBILE_CLIENT_ID` (for a separate mobile-app OIDC client) are also configured there.
 
 ### Authentication
 
@@ -188,13 +226,20 @@ oidc-client-secret: "your-client-secret"
 
 ### Storage
 
-The uploads PVC defaults to 10Gi. Adjust in `backend.yaml`:
+Each stateful service gets its own PVC, sized conservatively by default — resize any of them by
+editing the `storage` request in the matching manifest before applying it:
+
+| PVC                             | Manifest        | Default size |
+| ------------------------------- | --------------- | ------------ |
+| `uploads-pvc` (clothing photos) | `backend.yaml`  | 1Gi          |
+| `postgres-pvc`                  | `postgres.yaml` | 5Gi          |
+| `redis-pvc`                     | `redis.yaml`    | 1Gi          |
 
 ```yaml
 spec:
   resources:
     requests:
-      storage: 50Gi  # Increase as needed
+      storage: 50Gi # Increase as needed
 ```
 
 ## Troubleshooting

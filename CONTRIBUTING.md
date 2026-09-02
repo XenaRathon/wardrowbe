@@ -11,6 +11,7 @@ Please be respectful and constructive in all interactions. We welcome contributo
 ### Reporting Issues
 
 Before creating a new issue:
+
 1. Search existing issues to avoid duplicates
 2. Use the issue templates when available
 3. Include relevant details:
@@ -89,7 +90,7 @@ npm run dev
 npm test
 
 # Check types
-npm run typecheck
+npx tsc --noEmit
 
 # Run linting
 npm run lint
@@ -189,11 +190,11 @@ npm run i18n:check
 That runs three gates, none of which `tsc`, ESLint or Vitest can replace, because `t()` takes a
 plain string and a missing key type-checks perfectly:
 
-| Gate | Catches |
-|------|---------|
-| `i18n:keys` | `t()` calls referencing keys absent from the `en` catalog |
+| Gate          | Catches                                                          |
+| ------------- | ---------------------------------------------------------------- |
+| `i18n:keys`   | `t()` calls referencing keys absent from the `en` catalog        |
 | `i18n:parity` | locales missing keys, or ICU placeholders dropped in translation |
-| `i18n:scan` | hardcoded user-visible strings in JSX, attributes and toasts |
+| `i18n:scan`   | hardcoded user-visible strings in JSX, attributes and toasts     |
 
 Adding a language: add it to `SUPPORTED_LOCALES` in `frontend/lib/i18n/locales.ts`, add the same
 list to `backend/app/utils/locale.py`, and create `frontend/messages/<locale>/`.
@@ -289,6 +290,7 @@ docker compose exec backend alembic downgrade -1
 ### PR Title Format
 
 Use conventional commit format:
+
 - `feat: add outfit sharing functionality`
 - `fix: resolve duplicate detection issue`
 - `docs: update API documentation`
@@ -298,6 +300,7 @@ Use conventional commit format:
 ## Questions?
 
 If you have questions about contributing, feel free to:
+
 - Open a discussion
 - Ask in an existing related issue
 - Reach out to maintainers

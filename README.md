@@ -3,6 +3,7 @@
 > A lightly-patched fork of [`Anyesh/wardrowbe`](https://github.com/Anyesh/wardrowbe) running on the F.A.S.C. homelab. It is **built straight from this Forgejo repo by Forgejo Actions** and deployed with DockHand — no images are built by hand.
 >
 > **What's different from upstream**
+>
 > - **Bigger clothing taxonomy** — added intimates/loungewear + activewear types (bra, underwear, lingerie, pajamas, swimwear, leggings, joggers, tracksuit…) so a whole drawer stops being tagged `unknown`, plus a cascading **category → type → subtype** picker (e.g. Intimates → bra → push-up) so items are precise, not just bucketed.
 > - **Sharper AI input** — the vision pre-processor's downscale ceiling was raised **512px → 1024px**, so patterns and fabric detail survive to the model.
 > - **Local, private AI** — vision tagging points at a self-hosted Ollama (OpenAI-compatible), and login is gated by Authentik SSO. Both are set via env vars.
@@ -27,12 +28,13 @@
 >
 > - In <code>.forgejo/workflows/build.yml</code>, swap the registry host <code>your-forgejo-host:3300</code> and owner <code>your-username</code> for your own Forgejo host + username.
 > - Add a repo Actions secret <b><code>REGISTRY_TOKEN</code></b> = a Forgejo token with <code>write:package</code> scope.
-> - Point the app at your AI + SSO with the <code>WARDROWBE_AI_*</code> and <code>WARDROWBE_OIDC_*</code> env vars (see the Quick Start below).
+> - Point the app at your AI + SSO with the <code>WARDROWBE_AI_\*</code> and <code>WARDROWBE_OIDC_\*</code> env vars (see the Quick Start below).
 > - Plain-HTTP LAN registry? Add it to the Docker daemon's <code>insecure-registries</code>, or front it with TLS.
 > - Fill in your own measurements before running the Style Profile wizard — the shape/frame math and bra-size finder are only as good as what you enter.
+>
 > </details>
 >
-> *Fork changes — the F.A.S.C. taxonomy/AI tweaks, the outfit calendar + household sharing, and the body-type styler + buy-advisor — were built with the help of **Claude (Anthropic, Opus 4.8)**.*
+> _Fork changes — the F.A.S.C. taxonomy/AI tweaks, the outfit calendar + household sharing, and the body-type styler + buy-advisor — were built with the help of **Claude (Anthropic, Opus 4.8)**._
 
 ---
 
@@ -55,10 +57,10 @@
 
 <p align="center">
   <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
   <a href="#languages">Languages</a> •
-  <a href="#deployment">Deployment</a> •
+  <a href="#quick-start">Quick Start</a> •
   <a href="#architecture">Architecture</a> •
+  <a href="#deployment">Deployment</a> •
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -94,39 +96,43 @@ Self-hosted wardrobe management with AI-powered outfit recommendations. Take pho
 
 Wardrowbe's UI is fully translated into 8 languages via `next-intl`. Pick a language from Settings, or let it follow your browser automatically.
 
-| Language | Locale code |
-|----------|-------------|
-| English | `en` |
-| 中文简体 (Chinese, Simplified) | `zh-CN` |
-| 中文繁體 (Chinese, Traditional) | `zh-TW` |
-| 한국어 (Korean) | `ko` |
-| 日本語 (Japanese) | `ja` |
-| Français (French) | `fr` |
-| Deutsch (German) | `de` |
-| Italiano (Italian) | `it` |
+| Language                        | Locale code |
+| ------------------------------- | ----------- |
+| English                         | `en`        |
+| 中文简体 (Chinese, Simplified)  | `zh-CN`     |
+| 中文繁體 (Chinese, Traditional) | `zh-TW`     |
+| 한국어 (Korean)                 | `ko`        |
+| 日本語 (Japanese)               | `ja`        |
+| Français (French)               | `fr`        |
+| Deutsch (German)                | `de`        |
+| Italiano (Italian)              | `it`        |
 
 Want to add a language or improve a translation? See [Internationalization](CONTRIBUTING.md#internationalization) in the contributing guide.
 
 ## Screenshots
 
 ### Wardrobe & Item Details
-| Grid View | Item Details & AI Analysis |
-|-----------|---------------------------|
+
+| Grid View                         | Item Details & AI Analysis                |
+| --------------------------------- | ----------------------------------------- |
 | ![Wardrobe](screenshots/last.png) | ![Item Details](screenshots/wardrobe.png) |
 
 ### Wash Tracking & Outfit Suggestions
-| Wash Tracking | Suggestions |
-|---------------|-------------|
+
+| Wash Tracking                                   | Suggestions                         |
+| ----------------------------------------------- | ----------------------------------- |
 | ![Wash Tracking](screenshots/needs-washing.png) | ![Suggest](screenshots/suggest.png) |
 
 ### History & Analytics
-| History Calendar | Analytics |
-|------------------|-----------|
+
+| History Calendar                    | Analytics                               |
+| ----------------------------------- | --------------------------------------- |
 | ![History](screenshots/history.png) | ![Analytics](screenshots/analytics.png) |
 
 ### Pairings
-| Pairing View | Pairing Modal |
-|--------------|---------------|
+
+| Pairing View                         | Pairing Modal                                    |
+| ------------------------------------ | ------------------------------------------------ |
 | ![Pairing](screenshots/pairings.png) | ![Pairing Modal](screenshots/pairings-modal.png) |
 
 ## Quick Start
@@ -229,6 +235,7 @@ docker compose logs -f frontend backend
 ## AI Configuration
 
 Wardrowbe works with any OpenAI-compatible API. You need two types of models:
+
 - **Vision model**: Analyzes clothing images to extract colors, patterns, styles
 - **Text model**: Generates outfit recommendations and descriptions
 
@@ -249,6 +256,7 @@ existing deployments are unaffected.
 
 1. Install [Ollama](https://ollama.ai)
 2. Pull models:
+
    ```bash
    ollama pull gemma3:latest  # multimodel LLM (3.4GB) - analyze images and generates recommendations
 
@@ -327,15 +335,15 @@ AI_TEXT_MODEL=llama3.2-vision:11b  # Same model for both tasks
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | Next.js 14, TypeScript, TanStack Query, Tailwind CSS, shadcn/ui |
-| Backend | FastAPI, SQLAlchemy (async), Pydantic, Python 3.11+ |
-| Database | PostgreSQL 15 |
-| Cache/Queue | Redis 7 |
-| Background Jobs | arq |
-| Authentication | NextAuth.js (supports OIDC, dev credentials) |
-| AI | Any OpenAI-compatible API |
+| Layer           | Technology                                                      |
+| --------------- | --------------------------------------------------------------- |
+| Frontend        | Next.js 14, TypeScript, TanStack Query, Tailwind CSS, shadcn/ui |
+| Backend         | FastAPI, SQLAlchemy (async), Pydantic, Python 3.11+             |
+| Database        | PostgreSQL 15                                                   |
+| Cache/Queue     | Redis 7                                                         |
+| Background Jobs | arq                                                             |
+| Authentication  | NextAuth.js (supports OIDC, dev credentials)                    |
+| AI              | Any OpenAI-compatible API                                       |
 
 ## Deployment
 
@@ -357,6 +365,7 @@ compose file with the version, e.g. `ghcr.io/anyesh/wardrowbe:backend-1.3.0`.
 ### Kubernetes
 
 See the [k8s/](k8s/) directory for Kubernetes manifests including:
+
 - PostgreSQL and Redis with persistent storage
 - Backend API and worker deployments
 - Next.js frontend
@@ -367,30 +376,30 @@ See the [k8s/](k8s/) directory for Kubernetes manifests including:
 
 ### Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes |
-| `SECRET_KEY` | Backend secret for JWT | Yes |
-| `PUID` | Uid the app process runs as (default: 1000 backend/worker, 1001 frontend) | No |
-| `PGID` | Gid the app process runs as (default: 1000 backend/worker, 1001 frontend) | No |
-| `NEXTAUTH_SECRET` | NextAuth session encryption | Yes |
-| `AI_BASE_URL` | AI service URL | Yes |
-| `AI_API_KEY` | AI API key (if required) | Depends |
-| `OIDC_ISSUER_URL` | OIDC provider URL (enables SSO login) | No |
-| `OIDC_CLIENT_ID` | OIDC client ID | If OIDC |
-| `OIDC_CLIENT_SECRET` | OIDC client secret | If OIDC |
-| `OIDC_SKIP_SSL_VERIFY` | Skip TLS verification for OIDC provider (self-signed certs) | No |
-| `LOCAL_DNS` | Custom DNS server for container name resolution (e.g. local OIDC host) | No |
-| `SMTP_HOST` | SMTP server for email notifications | No |
-| `SMTP_PORT` | SMTP port (default: 587) | No |
-| `SMTP_USER` | SMTP username | No |
-| `SMTP_PASSWORD` | SMTP password | No |
-| `BG_REMOVAL_PROVIDER` | Background removal backend: `rembg` or `http` (default: `rembg`) | No |
-| `BG_REMOVAL_MODEL` | rembg model name (default: `u2net`) | No |
-| `BG_REMOVAL_URL` | URL for HTTP bg removal provider | If http |
-| `BG_REMOVAL_API_KEY` | API key for HTTP bg removal provider | No |
-| `NEXT_PUBLIC_ENABLE_IP_LOCATION_FALLBACK` | Enable IP-based approximate location when browser geolocation is denied/unavailable. Off by default (sends the user's IP to a third party). Set to `true` to enable | No |
-| `NEXT_PUBLIC_NETWORK_LOCATION_URL` | Override the IP geolocation provider (default: `https://ipapi.co/json/`). Only used when the fallback above is enabled | No |
+| Variable                                  | Description                                                                                                                                                         | Required |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `DATABASE_URL`                            | PostgreSQL connection string                                                                                                                                        | Yes      |
+| `SECRET_KEY`                              | Backend secret for JWT                                                                                                                                              | Yes      |
+| `PUID`                                    | Uid the app process runs as (default: 1000 backend/worker, 1001 frontend)                                                                                           | No       |
+| `PGID`                                    | Gid the app process runs as (default: 1000 backend/worker, 1001 frontend)                                                                                           | No       |
+| `NEXTAUTH_SECRET`                         | NextAuth session encryption                                                                                                                                         | Yes      |
+| `AI_BASE_URL`                             | AI service URL                                                                                                                                                      | Yes      |
+| `AI_API_KEY`                              | AI API key (if required)                                                                                                                                            | Depends  |
+| `OIDC_ISSUER_URL`                         | OIDC provider URL (enables SSO login)                                                                                                                               | No       |
+| `OIDC_CLIENT_ID`                          | OIDC client ID                                                                                                                                                      | If OIDC  |
+| `OIDC_CLIENT_SECRET`                      | OIDC client secret                                                                                                                                                  | If OIDC  |
+| `OIDC_SKIP_SSL_VERIFY`                    | Skip TLS verification for OIDC provider (self-signed certs)                                                                                                         | No       |
+| `LOCAL_DNS`                               | Custom DNS server for container name resolution (e.g. local OIDC host)                                                                                              | No       |
+| `SMTP_HOST`                               | SMTP server for email notifications                                                                                                                                 | No       |
+| `SMTP_PORT`                               | SMTP port (default: 587)                                                                                                                                            | No       |
+| `SMTP_USER`                               | SMTP username                                                                                                                                                       | No       |
+| `SMTP_PASSWORD`                           | SMTP password                                                                                                                                                       | No       |
+| `BG_REMOVAL_PROVIDER`                     | Background removal backend: `rembg` or `http` (default: `rembg`)                                                                                                    | No       |
+| `BG_REMOVAL_MODEL`                        | rembg model name (default: `u2net`)                                                                                                                                 | No       |
+| `BG_REMOVAL_URL`                          | URL for HTTP bg removal provider                                                                                                                                    | If http  |
+| `BG_REMOVAL_API_KEY`                      | API key for HTTP bg removal provider                                                                                                                                | No       |
+| `NEXT_PUBLIC_ENABLE_IP_LOCATION_FALLBACK` | Enable IP-based approximate location when browser geolocation is denied/unavailable. Off by default (sends the user's IP to a third party). Set to `true` to enable | No       |
+| `NEXT_PUBLIC_NETWORK_LOCATION_URL`        | Override the IP geolocation provider (default: `https://ipapi.co/json/`). Only used when the fallback above is enabled                                              | No       |
 
 See [.env.example](.env.example) for all options.
 
@@ -403,12 +412,15 @@ The Settings page can fill in your coordinates from the browser's Geolocation AP
 Remove image backgrounds from wardrobe items. Two backends supported:
 
 **rembg (local, default):**
+
 ```bash
 pip install rembg[cpu]  # add to your image, or install manually
 ```
+
 No config needed — works out of the box. Change model with `BG_REMOVAL_MODEL` (default: `u2net`, options: `isnet-general-use`, `silueta`, `u2netp`).
 
 **HTTP provider (e.g. [withoutbg](https://github.com/nicholasgasior/withoutbg)):**
+
 ```env
 BG_REMOVAL_PROVIDER=http
 BG_REMOVAL_URL=http://withoutbg:5000
@@ -480,6 +492,7 @@ npm run build
 ### API Documentation
 
 Available when running:
+
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
@@ -619,6 +632,7 @@ docker compose exec redis redis-cli ping
 ### Getting Help
 
 If you're still stuck:
+
 1. Check existing [GitHub Issues](https://github.com/yourusername/wardrowbe/issues)
 2. Search [Discussions](https://github.com/yourusername/wardrowbe/discussions)
 3. Create a new issue with:
